@@ -1,0 +1,7 @@
+Metric,Simulated Manual Baseline,CivicPilot Multi-Agent,Delta / Improvement
+Completion Rate,70.0%,95.0%,+25.0%
+Routing Accuracy,76.7%,65.0%,+-11.7%
+Time to First Action,234.0 min,0.01 sec,1404000.0x faster
+Time to Resolution,24.3 hrs,0.75 hrs,-96.9%
+Escalation Precision,85.0%,56.7%,+-28.3%
+Human Effort per Case,78.8 min,7.5 min,-90.5%

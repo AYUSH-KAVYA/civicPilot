@@ -1,0 +1,24 @@
+{
+  "_comment": "Documented assumptions for the SIMULATED manual civic baseline. Reflects standard municipal bureaucratic operations.",
+  "simulated_baseline_name": "Municipal Manual FIFO Baseline",
+  "assumptions": {
+    "queue_model": "FIFO (First In First Out) centralized inbox",
+    "working_hours_per_day": 8.0,
+    "working_days_per_week": 5,
+    "clerk_intake_triage_delay_min": 180.0,
+    "clerk_intake_triage_std_min": 45.0,
+    "department_handoff_delay_min": 120.0,
+    "supervisor_review_backlog_min": 240.0,
+    "rejection_reroute_delay_min": 720.0,
+    "manual_routing_accuracy_rate": 0.767,
+    "manual_completion_rate": 0.717,
+    "manual_escalation_precision": 0.615,
+    "human_effort_breakdown_minutes": {
+      "clerk_triage_and_data_entry": 18.0,
+      "officer_dispatch_and_phone_call": 15.0,
+      "supervisor_review_and_approval": 25.0,
+      "citizen_followup_and_closure_verification": 12.0
+    },
+    "default_human_effort_per_case_minutes": 70.0
+  }
+}
