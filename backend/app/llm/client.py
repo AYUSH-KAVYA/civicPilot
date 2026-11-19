@@ -3,7 +3,7 @@ import json
 import logging
 import os
 import time
-from typing import Any, Iterable, Mapping, Optional, Sequence, Type, TypeVar
+from typing import Any, Mapping, Optional, Sequence, Type, TypeVar
 
 from pydantic import BaseModel, ValidationError
 
