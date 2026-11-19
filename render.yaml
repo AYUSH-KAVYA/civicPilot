@@ -1,0 +1,35 @@
+services:
+  - type: web
+    name: civicpilot-api
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: OFFICER_PASSWORD
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-1.5-pro
+      - key: GEMINI_EMBED_MODEL
+        value: text-embedding-004
+      - key: MOCK_LLM
+        value: "false"
+      - key: CONFIDENCE_THRESHOLD
+        value: "0.65"
+      - key: SIM_TIME_SCALE
+        value: "1"
+      - key: FRONTEND_ORIGIN
+        value: "*"
+      - key: NOMINATIM_USER_AGENT
+        value: "CivicPilot-Prod/1.0 (contact: dispatch@metroville.gov)"
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
