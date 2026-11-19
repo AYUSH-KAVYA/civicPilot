@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { listApprovals, handleApproval, listCases, resolveCase } from "@/lib/api/endpoints";
+import { getErrorMessage } from "@/lib/api/errorMessage";
 import { Approval, CaseState, RiskTier, CaseStatus } from "@/lib/api/types";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -52,6 +53,8 @@ export default function ApprovalsPage() {
   }, []);
 
   useEffect(() => {
+    // Load external API state on mount, then refresh while the queue is open.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadData();
     const interval = setInterval(loadData, 3000);
     return () => clearInterval(interval);
@@ -64,8 +67,8 @@ export default function ApprovalsPage() {
       setActionMsg(`Approval ${id} APPROVED. Authorized autonomous agent execution resumed!`);
       loadData();
       setTimeout(() => setActionMsg(""), 4000);
-    } catch (err: any) {
-      alert("Failed to approve: " + err.message);
+    } catch (err) {
+      setActionMsg(getErrorMessage(err, "Failed to approve the request."));
     }
   };
 
@@ -76,8 +79,8 @@ export default function ApprovalsPage() {
       setActionMsg(`Approval ${id} REJECTED.`);
       loadData();
       setTimeout(() => setActionMsg(""), 4000);
-    } catch (err: any) {
-      alert("Failed to reject: " + err.message);
+    } catch (err) {
+      setActionMsg(getErrorMessage(err, "Failed to reject the request."));
     }
   };
 
@@ -88,8 +91,8 @@ export default function ApprovalsPage() {
       setActionMsg(`Case #${caseId} resolved and unblocked!`);
       loadData();
       setTimeout(() => setActionMsg(""), 4000);
-    } catch (err: any) {
-      alert("Failed to resolve: " + err.message);
+    } catch (err) {
+      setActionMsg(getErrorMessage(err, "Failed to resolve the case."));
     }
   };
 
@@ -180,12 +183,14 @@ export default function ApprovalsPage() {
                       </div>
 
                       <span className="text-[10px] font-mono text-muted-foreground">
-                        Requested: {new Date(appr.created_at).toLocaleTimeString()}
+                        Requested: {appr.requested_at || appr.created_at
+                          ? new Date(appr.requested_at || appr.created_at || "").toLocaleTimeString()
+                          : "Time unavailable"}
                       </span>
                     </div>
 
                     <CardTitle className="text-base font-bold text-slate-900 dark:text-slate-100 mt-2">
-                      {appr.summary}
+                      {appr.summary || appr.rationale || `Approval required for step ${appr.step_id || "not specified"}`}
                     </CardTitle>
                   </CardHeader>
 
@@ -197,9 +202,9 @@ export default function ApprovalsPage() {
                         <span>Agent Reasoning Packet &bull; Contract Section 6</span>
                       </div>
 
-                      {appr.detail && (
+                      {(appr.detail || appr.rationale || appr.step_id) && (
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] font-mono">
-                          {Object.entries(appr.detail).map(([key, val]) => (
+                          {Object.entries(appr.detail || { rationale: appr.rationale, step_id: appr.step_id }).map(([key, val]) => (
                             <div key={key} className="bg-white dark:bg-slate-900 p-2 rounded border">
                               <span className="text-muted-foreground block text-[10px] uppercase">
                                 {key.replace(/_/g, " ")}:

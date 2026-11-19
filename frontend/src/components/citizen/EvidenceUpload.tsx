@@ -7,13 +7,15 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Paperclip, Send, Camera, Image as ImageIcon, Sparkles, AlertCircle } from "lucide-react";
 import { sendCitizenMessage } from "@/lib/api/endpoints";
+import { getErrorMessage } from "@/lib/api/errorMessage";
 
 interface EvidenceUploadProps {
   caseId: string;
+  accessToken?: string;
   onSubmitted?: () => void;
 }
 
-export function EvidenceUpload({ caseId, onSubmitted }: EvidenceUploadProps) {
+export function EvidenceUpload({ caseId, accessToken, onSubmitted }: EvidenceUploadProps) {
   const [text, setText] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -28,14 +30,14 @@ export function EvidenceUpload({ caseId, onSubmitted }: EvidenceUploadProps) {
       await sendCitizenMessage(caseId, {
         text: text.trim() || "Uploaded supplemental verification photo",
         image: file || undefined,
-      });
+      }, accessToken);
       setText("");
       setFile(null);
       setSuccessMsg("Supplemental evidence received! Adaptation Rule (c) triggered.");
       setTimeout(() => setSuccessMsg(""), 4000);
       onSubmitted?.();
-    } catch (err: any) {
-      alert("Failed to send message: " + (err.message || "Unknown error"));
+    } catch (err) {
+      window.alert("Failed to send message: " + getErrorMessage(err, "Unknown error"));
     } finally {
       setSubmitting(false);
     }

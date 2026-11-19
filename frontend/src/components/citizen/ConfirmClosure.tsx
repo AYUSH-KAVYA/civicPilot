@@ -6,14 +6,16 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { CheckCircle2, XCircle, AlertTriangle, MessageSquare } from "lucide-react";
 import { confirmCase } from "@/lib/api/endpoints";
+import { getErrorMessage } from "@/lib/api/errorMessage";
 import { CaseState, CaseStatus } from "@/lib/api/types";
 
 interface ConfirmClosureProps {
   caseState: CaseState;
+  accessToken?: string;
   onUpdated: (updatedCase: CaseState) => void;
 }
 
-export function ConfirmClosure({ caseState, onUpdated }: ConfirmClosureProps) {
+export function ConfirmClosure({ caseState, accessToken, onUpdated }: ConfirmClosureProps) {
   const [comment, setComment] = useState("");
   const [loading, setLoading] = useState(false);
   const [feedbackGiven, setFeedbackGiven] = useState(false);
@@ -24,13 +26,13 @@ export function ConfirmClosure({ caseState, onUpdated }: ConfirmClosureProps) {
       const res = await confirmCase(caseState.id, {
         confirmed,
         comment: comment.trim() || undefined,
-      });
+      }, accessToken);
       if (res.data) {
         onUpdated(res.data);
       }
       setFeedbackGiven(true);
-    } catch (err: any) {
-      alert("Error submitting confirmation: " + err.message);
+    } catch (err) {
+      window.alert("Error submitting confirmation: " + getErrorMessage(err, "Please try again."));
     } finally {
       setLoading(false);
     }

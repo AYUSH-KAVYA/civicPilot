@@ -1,145 +1,139 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 
-test.describe("CivicPilot Multi-Agent System - End-to-End Scenarios", () => {
+const useMocks = process.env.E2E_USE_MOCKS !== "false";
+
+async function openOfficer(page: Page, path: string) {
+  await page.goto(path);
+  if (useMocks) return;
+
+  const password = process.env.E2E_OFFICER_PASSWORD;
+  if (!password) throw new Error("Set E2E_OFFICER_PASSWORD to run officer flows against a live API.");
+  await page.goto("/officer/login");
+  await page.getByPlaceholder(/Enter officer password/i).fill(password);
+  await page.getByRole("button", { name: /Sign In to Officer Console/i }).click();
+  await expect(page).toHaveURL(/\/officer\/cases/);
+  if (path !== "/officer/cases") await page.goto(path);
+}
+
+async function getScenarioCaseId(page: Page, index: number): Promise<string> {
+  const href = await page.getByRole("link", { name: /Inspect Case #/ }).nth(index).getAttribute("href");
+  const caseId = href?.match(/\/officer\/cases\/([^/?]+)/)?.[1];
+  if (!caseId) throw new Error("Scenario case link was not returned by the demo page.");
+  return caseId;
+}
+
+test.describe("CivicPilot Part 4 user journeys", () => {
   test.beforeEach(async ({ page }) => {
-    // Navigate to base URL
-    await page.goto("/");
+    await page.addInitScript((mockMode) => {
+      if (!mockMode) return;
+      const token = "mock_jwt_officer_token_civicpilot_2026";
+      localStorage.setItem("civicpilot_use_mocks", "true");
+      localStorage.setItem("officer_token", token);
+      localStorage.setItem("auth-storage", JSON.stringify({ state: { token, isAuthenticated: true }, version: 0 }));
+    }, useMocks);
   });
 
-  test("Landing Page renders 6-step loop, architecture, and navigation", async ({ page }) => {
+  test("landing page explains the six-step loop and points to citizen/officer flows", async ({ page }) => {
+    await page.goto("/");
     await expect(page).toHaveTitle(/CivicPilot/);
     await expect(page.locator("h1")).toContainText("From Citizen Grievance to Verified Resolution");
-
-    // The six loop steps are visible
-    await expect(page.getByText("Perceive")).toBeVisible();
-    await expect(page.getByText("Reason")).toBeVisible();
-    await expect(page.getByText("Plan")).toBeVisible();
-    await expect(page.getByText("Act")).toBeVisible();
-    await expect(page.getByText("Evaluate")).toBeVisible();
-    await expect(page.getByText("Adapt")).toBeVisible();
-
-    // CTA buttons
-    await expect(page.getByRole("link", { name: /Report an Issue/i })).toBeVisible();
-    await expect(page.getByRole("link", { name: /Officer Live Dashboard/i })).toBeVisible();
+    for (const phase of ["Perceive", "Reason", "Plan", "Act", "Evaluate", "Adapt"]) {
+      await expect(page.getByText(phase, { exact: true }).first()).toBeVisible();
+    }
+    await expect(page.getByRole("link", { name: /Report an Issue/i }).first()).toBeVisible();
+    await expect(page.getByRole("link", { name: /Officer Live Dashboard/i }).first()).toBeVisible();
   });
 
-  test("Scenario 1: Happy Path - Citizen reports water leak & tracks live resolution", async ({ page }) => {
-    // 1. Citizen navigates to /report
+  test("Happy Path: citizen submits a report, follows status, and adds evidence", async ({ page }) => {
     await page.goto("/report");
-    await expect(page.locator("h1")).toContainText("Citizen Grievance Portal");
-
-    // 2. Fills in incident report
-    const textarea = page.locator("textarea");
-    await textarea.fill("Major water main burst near Oak St and 5th Ave. Water is flooding the pedestrian pathway.");
-
-    // 3. Submits report
+    await page.locator("#incident-description").fill("Water is gushing from a broken pipe near Oak Street and flooding the sidewalk.");
+    await page.locator("#citizen-contact").fill("citizen@example.test");
     await page.getByRole("button", { name: /Submit Grievance/i }).click();
 
-    // 4. Verifies live status tracker appears
-    await expect(page.getByText(/Grievance Filed • Case #/i)).toBeVisible({ timeout: 10000 });
-    await expect(page.getByText(/Work Order Dispatched \/ In Progress/i)).toBeVisible();
-    await expect(page.getByText(/Live Agent Loop Updates/i)).toBeVisible();
+    await expect(page.getByText(/Grievance Filed.*Case #/i)).toBeVisible();
+    await expect(page.getByText("Live Agent Loop Updates")).toBeVisible();
+    await expect(page.getByText(/SSE Stream: MOCK_STREAM/i)).toBeVisible();
 
-    // 5. Submit supplemental follow-up evidence
-    const followUpInput = page.getByPlaceholder(/Type extra information/i);
-    await followUpInput.fill("Water flow has started to recede.");
+    await page.getByPlaceholder(/Type extra information/i).fill("The water is now reaching the curb ramp.");
     await page.getByRole("button", { name: /Submit to Agent/i }).click();
     await expect(page.getByText(/Supplemental evidence received/i)).toBeVisible();
+
+    await page.getByRole("button", { name: /Copy Tracking Link/i }).click();
+    await expect(page.getByText(/Link Copied/i)).toBeVisible();
   });
 
-  test("Scenario 2: Disruption - Ticket rejected by roads dept triggers Adaptation Rule (a)", async ({ page }) => {
-    // 1. Officer opens Case 1002 (Road pothole)
-    await page.goto("/officer/cases/1002");
-    await expect(page.locator("h1")).toContainText("Mission St near 24th");
+  test("Disruption: rejecting a work ticket appears in the adaptation audit trail", async ({ page }) => {
+    await openOfficer(page, "/officer/demo");
+    await page.getByRole("button", { name: /Run Disruption/i }).click();
+    await expect(page.getByText(/Scenario \[DISRUPTION\] launched successfully/i)).toBeVisible();
 
-    // 2. Click sandbox 'Reject Ticket' button
-    const rejectBtn = page.getByRole("button", { name: /Reject Ticket/i }).first();
-    await rejectBtn.click();
-
-    // 3. Verifies adaptation rule triggered in audit trail
+    const caseId = await getScenarioCaseId(page, 1);
+    const inspectLink = page.getByRole("link", { name: new RegExp(`Inspect Case #${caseId}`) });
+    await expect(inspectLink).toHaveAttribute("href", new RegExp(`/officer/cases/${caseId}$`));
+    await page.goto(`/officer/cases/${caseId}`);
+    await expect(page.getByText("Sandbox In-Flight Disruptions (Live Demo)")).toBeVisible();
+    await page.getByRole("button", { name: "Reject Ticket" }).click();
     await expect(page.getByText(/Ticket rejected\. Adaptation Rule \(a\) triggered!/i)).toBeVisible();
-    await expect(page.getByText(/ADAPTATION RULE ACTIVE/i)).toBeVisible();
+    await expect(page.getByText(/ADAPTATION RULE ACTIVE/i).first()).toBeVisible();
   });
 
-  test("Scenario 3: Ambiguity - Low confidence halted safely into NEEDS_HUMAN queue", async ({ page }) => {
-    // 1. Officer opens Approvals & Needs-Human page
+  test("Ambiguity: low-confidence case can be reviewed and resolved by an officer", async ({ page }) => {
+    await openOfficer(page, "/officer/demo");
+    await page.getByRole("button", { name: /Run Ambiguity/i }).click();
+    await expect(page.getByText(/Scenario \[AMBIGUITY\] launched successfully/i)).toBeVisible();
+    const caseId = await getScenarioCaseId(page, 2);
+
     await page.goto("/officer/approvals");
-    await expect(page.locator("h1")).toContainText("Officer Authorization & Review Queue");
-
-    // 2. Switch to Needs Human tab
     await page.getByRole("tab", { name: /Needs Human Queue/i }).click();
+    await expect(page.getByText(`Case #${caseId}`, { exact: false }).first()).toBeVisible();
+    await expect(page.getByText(/Reason:/i).first()).toBeVisible();
 
-    // 3. Case 1003 should be listed with ambiguity reason
-    await expect(page.getByText(/Case #1003/i)).toBeVisible();
-    await expect(page.getByText(/Reason:/i)).toBeVisible();
-
-    // 4. Officer enters resolution note and unblocks
-    const resolveInput = page.locator("input[placeholder*='Officer resolution notes']").first();
-    await resolveInput.fill("Clarified location as Richmond Park Playground. Dispatched grounds maintenance.");
-    await page.getByRole("button", { name: /Resolve & Re-enter/i }).first().click();
-
-    // 5. Success confirmation
+    await page.getByPlaceholder(/Officer resolution notes/i).fill("Confirmed the location with the citizen and routed the issue to the correct team.");
+    await page.getByRole("button", { name: /Resolve & Re-enter Autonomous Loop/i }).click();
     await expect(page.getByText(/resolved and unblocked/i)).toBeVisible();
   });
 
-  test("Scenario 4: Case 1042 Benchmark - CRITICAL risk tier requires officer authorization", async ({ page }) => {
-    // 1. Officer opens approvals page
+  test("Case 1042: critical authorization can be inspected and approved", async ({ page }) => {
+    await openOfficer(page, "/officer/demo");
+    await page.getByRole("button", { name: /Run Case 1042/i }).click();
+    await expect(page.getByText(/Scenario \[CASE1042\] launched successfully/i)).toBeVisible();
+    const caseId = await getScenarioCaseId(page, 3);
+
     await page.goto("/officer/approvals");
-
-    // 2. Pending critical approval for Case 1042 should be displayed
-    await expect(page.getByText(/TIER: CRITICAL/i)).toBeVisible();
-    await expect(page.getByText(/Emergency 100m perimeter evacuation/i)).toBeVisible();
-
-    // 3. Officer approves action
-    const approveBtn = page.getByRole("button", { name: /Approve & Dispatch/i }).first();
-    await approveBtn.click();
-
-    // 4. Verify approval success
+    await expect(page.getByText(/TIER: CRITICAL/i).first()).toBeVisible();
+    await expect(page.getByText(`Case #${caseId}`, { exact: false }).first()).toBeVisible();
+    await page.getByRole("button", { name: /Approve & Dispatch/i }).first().click();
     await expect(page.getByText(/APPROVED\. Authorized autonomous agent execution resumed!/i)).toBeVisible();
-
-    // 5. Navigate to Case 1042 detail to verify audit trail
-    await page.goto("/officer/cases/1042");
-    await expect(page.getByText(/CASE 1042/i)).toBeVisible();
-    await expect(page.getByText(/Executing authorized critical action/i)).toBeVisible();
   });
 
-  test("Officer Cases Dashboard live queue, counters, and filters work", async ({ page }) => {
-    await page.goto("/officer/cases");
+  test("officer queue has global counters, filters, and case inspection links", async ({ page }) => {
+    let query = "1042";
+    if (useMocks) {
+      await openOfficer(page, "/officer/cases");
+    } else {
+      await openOfficer(page, "/officer/demo");
+      await page.getByRole("button", { name: /Run Case 1042/i }).click();
+      await expect(page.getByText(/Scenario \[CASE1042\] launched successfully/i)).toBeVisible();
+      query = await getScenarioCaseId(page, 3);
+      await page.goto("/officer/cases");
+    }
     await expect(page.getByText("Autonomous Grievance Command Center")).toBeVisible();
-
-    // Verify counters
-    await expect(page.getByText("Open Grievances")).toBeVisible();
-    await expect(page.getByText("At Risk (SLA Breach)")).toBeVisible();
-    await expect(page.getByText("Needs Human Officer")).toBeVisible();
-    await expect(page.getByText("Verified & Closed")).toBeVisible();
-
-    // Verify search filter works
-    const searchInput = page.getByPlaceholder(/Search by Case ID/i);
-    await searchInput.fill("1042");
-    await expect(page.getByText("Case #1042", { exact: false })).toBeVisible();
+    for (const counter of ["Open Grievances", "At Risk (SLA Breach)", "Needs Human Officer", "Verified & Closed"]) {
+      await expect(page.getByText(counter).first()).toBeVisible();
+    }
+    await page.getByPlaceholder(/Search by Case ID/i).fill(query);
+    await expect(page.getByText(`#${query}`, { exact: true })).toBeVisible();
   });
 
-  test("Slide 12 Metrics scorecard renders 6 core metrics & charts", async ({ page }) => {
-    await page.goto("/officer/metrics");
-    await expect(page.getByText("Evaluation & Slide 12 Benchmark Metrics")).toBeVisible();
-
-    // Verify test-set size label
-    await expect(page.getByText(/Test-Set Size: 60 Cases/i)).toBeVisible();
-
-    // Verify all 6 Slide 12 metrics
-    await expect(page.getByText("Completion Rate")).toBeVisible();
-    await expect(page.getByText("Routing Accuracy")).toBeVisible();
-    await expect(page.getByText("Time to First Action")).toBeVisible();
-    await expect(page.getByText("Time to Resolution")).toBeVisible();
-    await expect(page.getByText("Escalation Precision")).toBeVisible();
-    await expect(page.getByText("Human Effort per Case")).toBeVisible();
-
-    // Verify simulated baseline is explicitly labeled
-    await expect(page.getByText(/Simulated Baseline\*/i).first()).toBeVisible();
-
-    // Trigger evaluation benchmark run
-    const evalBtn = page.getByRole("button", { name: /Run Evaluation Benchmark/i });
-    await evalBtn.click();
-    await expect(page.getByText(/Evaluation run #.* completed on 60 benchmark cases/i)).toBeVisible();
+  test("metrics show six outcomes without fabricated values when data is absent", async ({ page }) => {
+    await openOfficer(page, "/officer/metrics");
+    await expect(page.getByText("Evaluation & Metrics")).toBeVisible();
+    for (const metric of ["Completion Rate", "Routing Accuracy", "Time to First Action", "Time to Resolution", "Escalation Precision", "Human Effort per Case"]) {
+      await expect(page.getByText(metric, { exact: true })).toBeVisible();
+    }
+    await expect(page.getByText(/Test-set size: Not reported/i)).toBeVisible();
+    if (useMocks) await expect(page.getByText("No evaluation data available yet.").first()).toBeVisible();
+    await page.getByRole("button", { name: /Run evaluation/i }).click();
+    await expect(page.getByRole("status").getByText(/Evaluation run .* finished with status/i)).toBeVisible();
   });
 });

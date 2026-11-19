@@ -1,152 +1,70 @@
-# CivicPilot — Demo Script
+# CivicPilot Demo Script
 
-> **Audience**: Hackathon judges, city tech leads, stakeholders  
-> **Duration**: ~10 minutes total (3 scenarios + Case 1042)  
-> **Setup**: Officer dashboard open at http://localhost:3000/officer, Demo Controls tab visible  
-> **Tip**: Set `SIM_TIME_SCALE=60` in the backend so multi-hour SLAs play out in seconds during the demo.
+- **Audience:** hackathon judges and civic-service stakeholders
+- **Runtime:** about 8–10 minutes for the three core scenarios, plus the Case 1042 critical-approval showcase
+- **Start at:** `/officer/demo`; keep `/report` available in a second tab. Follow the REST/SSE behavior in [CONTRACT.md](CONTRACT.md), and use the case IDs returned by the demo API rather than assuming fixed live IDs.
 
----
+## Before the demo
 
-## Before You Begin
+- Start the frontend in mock mode or point `NEXT_PUBLIC_API_URL` at a running backend with `NEXT_PUBLIC_USE_MOCKS=false`.
+- Log in at `/officer/login`. Mock mode offers a one-click demo login; live mode uses the configured officer password.
+- Open `/officer/demo` and `/officer/cases` in separate tabs.
+- For live deadlines, configure backend `SIM_TIME_SCALE` before startup. The UI shows that this scale is backend-configured because the contract exposes no simulated-clock read endpoint.
+- In mock mode, preloaded cases 1001, 1002, 1003, and 1042 make the scenario dashboards immediately inspectable. Live scenario runs create fresh cases and show the returned ID/link.
 
-| Checklist | Done? |
-|---|---|
-| Backend running (`uvicorn` or Docker Compose) | ☐ |
-| Frontend running (`npm run dev` or Vercel) | ☐ |
-| `SIM_TIME_SCALE=60` set for clock acceleration | ☐ |
-| Browser open at `/officer/demo` with the 4 scenario buttons visible | ☐ |
-| Second browser tab open at `/report` for citizen perspective | ☐ |
-| Screen mirrored / shared | ☐ |
+## Scenario 1 — Happy Path: citizen report to verified closure
 
----
+**Point:** a citizen can file, follow the agent activity, add evidence, and confirm the result.
 
-## Scenario 1 — Happy Path: Water Leak (Urgent)
-
-> **What this shows**: The nominal 6-step loop working flawlessly from report to verified closure.
-
-### Talking Points
-> *"A citizen reports a burst pipe. Watch how CivicPilot handles everything — classify, plan, dispatch, follow up — without a single human touch."*
-
-### Minute-by-Minute Script
-
-| Time | Action | What the Audience Sees |
+| Time | Presenter action | What to highlight |
 |---|---|---|
-| **0:00** | Switch to `/report` tab. Type: *"There's water gushing out of a broken pipe at 42 Elm Street. The road is flooded."* Upload a sample leak photo. Click **Submit**. | **Report page** — form submits, case ID appears, status badge shows `NEW`. |
-| **0:05** | Switch to `/officer/cases` tab. | **Case list** refreshes via SSE; new card appears at top with `INTAKE` badge and Water department icon. |
-| **0:15** | Click into the case. Watch the **Timeline** panel. | 🟣 **perceive** event appears: *"Intake agent parsing media and geocoding location."* `parse_media` and `geo_lookup` tool call cards expand showing JSON args → results (ward 7, Water dept). |
-| **0:30** | Timeline continues auto-scrolling. | 🔵 **reason** event: *"Triage agent querying policy KB."* `policy_search` card shows SOP chunk from `water-sop.md` — SLA: 4 hours. Urgency badge changes to **HIGH**. Confidence meter shows 0.87. |
-| **0:45** | | 🟦 **plan** event: *"Planner created 4-step plan."* Plan panel on right side populates: steps for create_ticket, assign_crew, notify citizen, schedule_check. Risk tier badges: all **routine** (green). |
-| **1:00** | | 🟢 **act** event: Ticket `TKT-2041` created. Crew `W-07` assigned. Citizen SMS sent: *"Your case CP-XXXX has been assigned…"* Steps tick to ✅ **done** one by one. Status badge changes to `IN_PROGRESS`. |
-| **1:30** | In **Demo Controls**, click **Crew Check-In** button (sandbox signal). | Timeline: *"Crew W-07 checked in at Elm Street."* Map panel shows crew marker moving toward the incident pin. |
-| **2:00** | Click **Upload Repair Photo** in Demo Controls. | 🟡 **evaluate** event: *"Evaluator verifying photo evidence."* Photo thumbnail appears in timeline. Confidence meter 0.94. Plan step `repair_complete` → ✅ done. Status → `AWAITING_CONFIRMATION`. |
-| **2:15** | Switch to `/track/[case-id]` tab (citizen tracking). | **Citizen tracking page** shows *"Repair completed — please confirm."* with **Confirm closure** and **Reopen** buttons. |
-| **2:30** | Click **Confirm closure**. | Status badge snaps to `CLOSED` 🎉. Resolution time shown. Officer dashboard case card moves to Closed bucket. |
+| 0:00 | In `/report`, describe a water leak, enter a phone/email for updates, choose a language, and adjust the address or map pin. Optionally attach a photo. Submit. | Intake fields, location and language are sent through `POST /api/cases`; the response creates a private tracking link with the case access token. |
+| 0:45 | Keep the citizen page open while the case appears. | Status tracker, live event stream, and notification inbox. If SSE is unavailable, the UI reports polling fallback and continues refreshing events/state. |
+| 1:30 | Open the officer queue and inspect the new case. | Department/status/urgency badges and the global queue counters. Filters only change the visible list. |
+| 2:15 | Open the case detail. Expand a tool-call event and inspect the plan. | Phase-colored audit events, JSON detail, dependencies, step statuses, actual reported confidence and policy references. Missing backend fields are shown as unavailable. |
+| 3:00 | Return to the citizen tab and send a short update or evidence photo. | The follow-up is authenticated with the case token; the audit trail records the citizen update. |
+| 3:45 | On the officer detail page, use available sandbox actions for the selected ticket if desired. | The event timeline updates and adaptation reasons appear when the backend emits them. |
+| 4:30 | Return to `/track/[id]?token=…`. Confirm or dispute only when the case is awaiting citizen confirmation. | Confirmation calls the contract endpoint; dispute/reopen state is shown when returned by the backend. |
 
-### Presenter Tips
-- Keep the **Timeline** and **Plan** panels side-by-side (use the split-pane layout).
-- Point out the **phase colour legend** in the UI (purple=perceive, blue=reason, green=act).
-- Highlight the **confidence meter** rising from 0 to 0.87 as evidence is processed.
+**Narration:** “The citizen keeps a private tracking link. The officer sees the same case through an audited view, and each action stays visible instead of disappearing into an opaque handoff.”
 
----
+## Scenario 2 — Disruption: rejected work ticket
 
-## Scenario 2 — Disruption: Road Pothole (Ticket Rejected)
+**Point:** a field signal can trigger adaptation and a plan change.
 
-> **What this shows**: The adaptation loop — CivicPilot recovers from a mid-flight failure without human intervention.
-
-### Talking Points
-> *"The Roads department rejects the ticket — a common real-world failure. CivicPilot detects the rejection, re-routes to a different office, and completes the job."*
-
-### Minute-by-Minute Script
-
-| Time | Action | What the Audience Sees |
+| Time | Presenter action | What to highlight |
 |---|---|---|
-| **0:00** | Click **Run Disruption Scenario** in Demo Controls. | Report auto-submitted: *"Large pothole on South Bridge Road, causing tyre damage."* Status: `INTAKE`. |
-| **0:15** | | Triage completes. Urgency: **MEDIUM**. Department: Roads. Status: `TRIAGED → PLANNED`. |
-| **0:30** | Click **Reject Ticket** in Demo Controls (sandbox signal). | 🔴 Timeline event: *"Roads dept rejected ticket TKT-2042: 'Duplicate work order in progress.'"* Status badge flips to `AT_RISK` with orange indicator. Plan step `create_ticket` → ❌ failed. |
-| **0:45** | | 🟠 **adapt** event: *"Orchestrator triggered replanning. Reason: ticket rejected by primary department."* Adaptation card expands showing old plan vs. new plan diff. |
-| **1:00** | | 🟦 **plan** event: *"Planner v2 — re-routed to Roads District Office B."* New plan appears with updated `assign_crew` step. Status: `IN_PROGRESS`. |
-| **1:30** | | New crew `R-12` assigned. Citizen notification sent: *"Your case has been re-assigned to District Office B."* |
-| **2:30** | Click **Upload Repair Photo** in Demo Controls. | Evaluator confirms fill complete. Status → `AWAITING_CONFIRMATION`. Citizen confirms → `CLOSED`. |
+| 0:00 | In `/officer/demo`, click **Run Disruption**. | The response provides a case ID; use **Inspect Case** on that scenario card. |
+| 0:30 | Inspect its current status, plan, tickets, and event timeline. | Establish the initial road case context and the work-order ID returned by the API. |
+| 1:00 | Use **Reject Ticket** on the case detail, or choose that ticket in the demo sandbox selector and reject it. | `POST /api/sandbox/tickets/{id}/reject`; the timeline should show the signal and any adaptation/replan events emitted by the backend. |
+| 2:00 | Refresh/observe the case detail. | Compare the returned plan version, ticket state, status, and adaptation reason. Do not narrate a successful re-route unless it appears in the live audit data. |
+| 3:00 | If a replacement work order is available, use crew check-in or repair-photo sandbox action. | The tools are tied to the selected ticket; unavailable tickets leave the controls disabled. |
 
-### Presenter Tips
-- Pause on the **adaptation card** — it shows the old plan crossed out and the new plan alongside the reason. This is the core AI differentiator.
-- Point out the `AT_RISK` badge changing colour in the case list — judges scanning the list will notice immediately.
+**Narration:** “The important behavior is not that every disruption disappears instantly; it is that the system records the failure, evaluates the new context, and exposes the decision for inspection.”
 
----
+## Scenario 3 — Ambiguity: confidence guardrail and human review
 
-## Scenario 3 — Ambiguity: Vague Report (Guardrail Triggered)
+**Point:** low-confidence cases pause for a human rather than silently making a risky guess.
 
-> **What this shows**: CivicPilot is not reckless. When confidence is too low, it escalates to a human instead of guessing.
-
-### Talking Points
-> *"An officer gets a vague noise complaint with no location. The system's confidence falls below the threshold, the guardrail fires, and the officer gets a full reasoning packet to make an informed decision."*
-
-### Minute-by-Minute Script
-
-| Time | Action | What the Audience Sees |
+| Time | Presenter action | What to highlight |
 |---|---|---|
-| **0:00** | Click **Run Ambiguity Scenario** in Demo Controls. | Report submitted: *"There's some kind of problem near my house. It smells bad sometimes."* No location, no image. Status: `INTAKE`. |
-| **0:30** | | 🟣 perceive: `parse_media` extracts: category=Unknown, missing_info=["location", "category", "description"]. Confidence meter fills only to **0.41**. |
-| **0:35** | | 🔴 **guardrail** event fires: *"Confidence 0.41 < threshold 0.65. Stopping automated processing."* Red guardrail banner appears in Timeline. |
-| **0:40** | | Status badge → `NEEDS_HUMAN` 🔴. Case appears in **Approvals / Needs-Human queue** with high-priority indicator. |
-| **0:45** | Switch to `/officer/approvals`. | **Approvals page** shows the case. Click the case card to expand the **Reasoning Packet**: intake summary, extracted fields, what's missing, why confidence is low, suggested questions for the citizen. |
-| **1:00** | In the reasoning packet, click **Add Note & Resolve**. Type: *"Called citizen — confirmed location: 14 Canal Road. Category: Sanitation (blocked drain)."* Click **Resolve**. | POST to `/api/cases/{id}/resolve`. Status flips to `TRIAGED`. Orchestrator resumes with officer's note as context. Normal flow continues. |
-| **1:30** | | Triage runs with the officer's note, assigns Sanitation dept. Confidence 0.91. Plan created. IN_PROGRESS. |
+| 0:00 | Click **Run Ambiguity** in `/officer/demo`, then inspect its returned case. | The scenario is intentionally underspecified; use the live case ID shown by the UI. |
+| 0:45 | Review the timeline and confidence panel. | If reported confidence is below the configured threshold, the guardrail and needs-human reason should be visible. The frontend shows “Not reported” rather than inventing a score. |
+| 1:30 | Open `/officer/approvals`, then the **Needs Human Queue** tab. | Read the agent rationale and missing-information context; open the full case timeline if needed. |
+| 2:15 | Add an officer note and choose **Resolve & Re-enter Autonomous Loop**. | `POST /api/cases/{id}/resolve` records officer resolution; the page refreshes the case from the API. |
+| 3:00 | Return to the case detail. | Confirm the latest state/event emitted by the backend before describing resumed processing. |
 
-### Presenter Tips
-- Emphasise the **guardrail firing** — this is a safety feature, not a failure. CivicPilot is honest about uncertainty.
-- Show the **reasoning packet** up close — the fact that the AI explains *why* it's uncertain (not just that it is) is the differentiator.
-- If running live, you can manually type a vague report in the citizen interface to make the demo feel real.
+**Narration:** “Escalation is a safety outcome, not a model failure. The system makes uncertainty and its reason inspectable, and leaves the decision with an officer.”
 
----
+## Optional showcase — Case 1042 critical approval
 
-## Scenario 4 — Case 1042: High-Voltage Wire Near School (Critical)
+1. Click **Run Case 1042** and open the returned case ID.
+2. Inspect risk-tier details and the pending approval packet in `/officer/approvals`.
+3. Read the actual rationale and policy references; do not imply an approval exists unless the API returns one.
+4. Approve or reject with an officer note and verify the resulting case events.
 
-> **What this shows**: Risk-tiered approval. CivicPilot requires a human sign-off before acting on a critical case.
+This path demonstrates explicit human authorization for a critical action. It is separate from the three core scenario tests.
 
-### Talking Points
-> *"A downed power line near a primary school. This is life-safety critical. CivicPilot correctly escalates for officer approval before dispatching any crew — it won't act autonomously on this."*
+## Wrap-up
 
-### Minute-by-Minute Script
-
-| Time | Action | What the Audience Sees |
-|---|---|---|
-| **0:00** | Click **Run Case 1042** in Demo Controls. | Report: *"Fallen high-voltage power line across the gate of St. Mary's Primary School. Sparking. Children arriving in 20 minutes."* Status: `INTAKE`. |
-| **0:15** | | 🟣 perceive: location geocoded, nearby sensitive sites: **School (50m)**. `nearby_sensitive_sites` field populates in Intake panel. |
-| **0:20** | | 🔵 reason: Triage. Policy KB returns `electricity-sop.md` critical escalation rule. Urgency: **CRITICAL** (red badge). Department: Electricity Emergency. |
-| **0:30** | | 🟦 plan: Planner creates plan. Step `dispatch_emergency_crew` has risk_tier = **critical** (red badge). Step status → `awaiting_approval`. Yellow approval banner appears: *"Supervisor approval required before dispatching."* |
-| **0:35** | | Approval request appears in `/officer/approvals` queue. Priority: CRITICAL. Notification badge in nav shows 1. |
-| **0:45** | Switch to `/officer/approvals`. Click the approval card. Review the plan step details, rationale, policy ref. Click **Approve**. | POST `/api/approvals/{id}` with `{decision: "approve"}`. Approval card moves to Approved. |
-| **1:00** | Switch back to case detail. | Plan step `dispatch_emergency_crew` → ✅ running. Emergency crew `E-01` assigned. Status: `IN_PROGRESS`. Citizen notified: *"Emergency crew dispatched — ETA 8 minutes."* |
-| **2:00** | Click **Upload Repair Photo** in Demo Controls (line secured, area cordoned). | Evaluator verifies. Confidence 0.96. Status → `AWAITING_CONFIRMATION`. |
-| **2:10** | Officer resolves from dashboard (no citizen confirmation needed for critical). | Status → `CLOSED`. Total elapsed: 2:10 sim-time. |
-
-### Presenter Tips
-- Point out that **the system did not act** without approval — this is the trust-and-safety story.
-- Show the **risk tier badge** progression: green (routine) → red (critical) for different plan steps.
-- The **SIM_TIME_SCALE** makes this scenario feel urgent — real-time clock acceleration adds drama.
-
----
-
-## Quick Reference — UI Panels per Phase
-
-| Phase | Where to look in the UI |
-|---|---|
-| `perceive` | Timeline (purple events) + Intake panel (right column) |
-| `reason` | Timeline (blue events) + Triage panel (confidence meter, policy refs) |
-| `plan` | Plan panel (step cards, risk tier badges, dependencies) |
-| `act` | Timeline (green events) + Tickets panel + Map (crew pin) |
-| `evaluate` | Timeline (amber events) + Plan step status badges |
-| `adapt` | Timeline (orange adaptation card with old/new plan diff) |
-| `guardrail` | Red guardrail banner in timeline + NEEDS_HUMAN status badge |
-| `tool_call` | Expandable JSON cards in timeline (click to expand args/results) |
-
----
-
-## General Presenter Tips
-
-- **Use split-screen**: Timeline on the left, Plan/Approvals on the right.
-- **Zoom in** on the confidence meter when talking about guardrails.
-- **Demo Controls panel** (`/officer/demo`) is your backstage — keep it in a third monitor or hidden tab.
-- If a scenario runs too fast (SIM_TIME_SCALE=60), reduce to `SIM_TIME_SCALE=10` for more visible step transitions.
-- Each scenario auto-runs and auto-posts events — you are narrating, not clicking through forms.
+Open `/officer/metrics` last. The page labels manual baseline values as simulated and leaves unsupported results empty. The current backend contract does not provide all six requested metric values; do not present placeholders as measured outcomes. The run button uses `POST /api/eval/run` and reports the response status/test-set count only when the API returns it.

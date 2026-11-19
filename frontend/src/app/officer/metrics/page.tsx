@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { getMetricsSummary, getScorecard, runEval } from "@/lib/api/endpoints";
-import { MetricsSummary } from "@/lib/api/types";
-import { EvalScorecard, Slide12Metric } from "@/lib/mocks/fixtures/metrics";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { useCallback, useEffect, useState } from "react";
+import { getMetricsSummary, runEval } from "@/lib/api/endpoints";
+import type { MetricsSummary } from "@/lib/api/types";
+import type { EvalRun } from "@/lib/api/types";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,283 +17,229 @@ import {
   ResponsiveContainer,
   Legend,
 } from "recharts";
-import {
-  BarChart3,
-  TrendingUp,
-  Clock,
-  CheckCircle2,
-  AlertCircle,
-  Play,
-  RotateCw,
-  Sparkles,
-  Info,
-  Layers,
-} from "lucide-react";
+import { BarChart3, CheckCircle2, CircleHelp, Play, RotateCw } from "lucide-react";
+
+type MetricCard = {
+  key: string;
+  label: string;
+  description: string;
+  unit: "%" | "hours" | "minutes";
+  civicpilot: number | null;
+  baseline: number | null;
+};
+
+function formatValue(value: number | null, unit: MetricCard["unit"]): string {
+  if (value === null || !Number.isFinite(value)) return "—";
+  if (unit === "%") return `${(value * 100).toFixed(1)}%`;
+  return `${value.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${unit}`;
+}
+
+function evaluationValue(results: EvalRun["results"], key: string): number | null {
+  if (!Array.isArray(results)) return null;
+  const result = results.find((item) => item.metric === key);
+  return typeof result?.score === "number" ? result.score : null;
+}
+
+function buildMetrics(summary: MetricsSummary | null, results?: EvalRun["results"]): MetricCard[] {
+  const closedCases = summary?.cases_by_status.CLOSED ?? 0;
+  const completionRate = summary && summary.total_cases > 0 ? closedCases / summary.total_cases : null;
+  return [
+    {
+      key: "completion_rate",
+      label: "Completion Rate",
+      description: "Share of cases resolved; derived from the summary resolution rate.",
+      unit: "%",
+      civicpilot: evaluationValue(results, "completion_rate") ?? completionRate,
+      baseline: evaluationValue(results, "manual_baseline_completion_rate"),
+    },
+    {
+      key: "routing_accuracy",
+      label: "Routing Accuracy",
+      description: "Correct department assignment. The contract summary does not report this value.",
+      unit: "%",
+      civicpilot: evaluationValue(results, "routing_accuracy"),
+      baseline: evaluationValue(results, "manual_baseline_routing_accuracy"),
+    },
+    {
+      key: "time_to_first_action",
+      label: "Time to First Action",
+      description: "Elapsed time from report receipt to the first dispatched action.",
+      unit: "minutes",
+      civicpilot: evaluationValue(results, "time_to_first_action") ?? (summary ? summary.avg_time_to_first_action_sec / 60 : null),
+      baseline: evaluationValue(results, "manual_baseline_time_to_first_action"),
+    },
+    {
+      key: "time_to_resolution",
+      label: "Time to Resolution",
+      description: "Average resolution duration reported by the metrics summary.",
+      unit: "hours",
+      civicpilot: evaluationValue(results, "time_to_resolution"),
+      baseline: evaluationValue(results, "manual_baseline_time_to_resolution"),
+    },
+    {
+      key: "escalation_precision",
+      label: "Escalation Precision",
+      description: "Precision of human escalations. An escalation rate is not a precision measure.",
+      unit: "%",
+      civicpilot: evaluationValue(results, "escalation_precision"),
+      baseline: evaluationValue(results, "manual_baseline_escalation_precision"),
+    },
+    {
+      key: "human_effort_per_case",
+      label: "Human Effort per Case",
+      description: "Hands-on officer time per case; not present in the contract summary response.",
+      unit: "minutes",
+      civicpilot: evaluationValue(results, "human_effort_per_case"),
+      baseline: evaluationValue(results, "manual_baseline_human_effort_per_case"),
+    },
+  ];
+}
 
 export default function MetricsPage() {
-  const [metrics, setMetrics] = useState<MetricsSummary | null>(null);
-  const [scorecard, setScorecard] = useState<EvalScorecard | null>(null);
+  const [summary, setSummary] = useState<MetricsSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [evalRunning, setEvalRunning] = useState(false);
-  const [evalSuccess, setEvalSuccess] = useState("");
+  const [evalResults, setEvalResults] = useState<EvalRun["results"]>();
+  const [testSetSize, setTestSetSize] = useState<number | null>(null);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
+    setError("");
     try {
-      setLoading(true);
-      const [metricsRes, scorecardRes] = await Promise.all([
-        getMetricsSummary(),
-        getScorecard(),
-      ]);
-      if (metricsRes.data) setMetrics(metricsRes.data);
-      if (scorecardRes.data) setScorecard(scorecardRes.data);
-    } catch (err) {
-      console.error("Failed to load metrics:", err);
+      const response = await getMetricsSummary();
+      setSummary(response.data);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Unable to load evaluation metrics.");
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    loadData();
-  }, []);
+    // Load backend-reported metrics on mount.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadData();
+  }, [loadData]);
+
+  const metrics = buildMetrics(summary, evalResults);
+  const chartData = metrics
+    .filter((metric) => metric.civicpilot !== null || metric.baseline !== null)
+    .map((metric) => ({
+      name: metric.label,
+      CivicPilot: metric.civicpilot === null ? undefined : metric.unit === "%" ? metric.civicpilot * 100 : metric.civicpilot,
+      "Simulated Manual Baseline": metric.baseline === null ? undefined : metric.unit === "%" ? metric.baseline * 100 : metric.baseline,
+    }));
 
   const handleRunEval = async () => {
     setEvalRunning(true);
-    setEvalSuccess("");
+    setMessage("");
+    setError("");
     try {
-      const res = await runEval();
-      setEvalSuccess(`Evaluation run #${res.data?.id || "run-001"} completed on 60 benchmark cases.`);
+      const response = await runEval();
+      setEvalResults(response.data.results);
+      if (Array.isArray(response.data.results)) {
+        const sizes = response.data.results.flatMap((item) => {
+          const tested = item.details?.tested ?? item.details?.total;
+          return typeof tested === "number" ? [tested] : [];
+        });
+        if (sizes.length) setTestSetSize(Math.max(...sizes));
+      }
+      setMessage(`Evaluation run ${response.data.id} finished with status: ${response.data.status}.`);
       await loadData();
-      setTimeout(() => setEvalSuccess(""), 5000);
-    } catch (err: any) {
-      alert("Failed to run evaluation: " + err.message);
+    } catch (runError) {
+      setError(runError instanceof Error ? runError.message : "Unable to run the evaluation.");
     } finally {
       setEvalRunning(false);
     }
   };
 
-  if (loading && !scorecard) {
-    return (
-      <div className="container mx-auto max-w-6xl px-4 py-20 text-center">
-        <RotateCw className="h-8 w-8 animate-spin text-blue-600 mx-auto mb-2" />
-        <div className="text-xs font-mono text-muted-foreground">Loading evaluation telemetry...</div>
-      </div>
-    );
-  }
-
-  // Chart dataset for comparison
-  const rateComparisonData = scorecard?.metrics
-    .filter((m) => m.unit === "%")
-    .map((m) => ({
-      name: m.label,
-      "CivicPilot (Autonomous)": m.civicpilot_num,
-      "Simulated Manual Baseline": m.manual_num,
-    })) || [];
-
-  const timeComparisonData = [
-    {
-      name: "Time to Resolution (hrs)",
-      "CivicPilot (Autonomous)": 0.75,
-      "Simulated Manual Baseline": 24.3,
-    },
-    {
-      name: "Human Effort / Case (min)",
-      "CivicPilot (Autonomous)": 7.5,
-      "Simulated Manual Baseline": 78.8,
-    },
-  ];
-
   return (
-    <div className="container mx-auto max-w-6xl px-4 py-8 space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b pb-4">
+    <div className="container mx-auto max-w-6xl space-y-6 px-4 py-8">
+      <header className="flex flex-col items-start justify-between gap-4 border-b pb-4 sm:flex-row sm:items-center">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-900 dark:text-white flex items-center gap-2.5">
-            <BarChart3 className="h-7 w-7 text-blue-600" />
-            <span>Evaluation &amp; Slide 12 Benchmark Metrics</span>
+          <h1 className="flex items-center gap-2.5 text-2xl font-black tracking-tight sm:text-3xl">
+            <BarChart3 className="h-7 w-7 text-blue-600" /> Evaluation &amp; Metrics
           </h1>
-          <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
-            Empirical comparative evaluation: Autonomous Multi-Agent Loop vs. Simulated Manual Municipal Baseline.
+          <p className="mt-1 text-sm text-muted-foreground">
+            Reported metrics only. Manual baseline values are simulated and clearly identified.
           </p>
         </div>
-
-        <div className="flex items-center gap-3">
-          <Badge variant="outline" className="font-mono text-xs border-blue-300 text-blue-700 bg-blue-50/50">
-            Test-Set Size: {scorecard?.test_set_size || 60} Cases
+        <div className="flex flex-wrap items-center gap-3">
+          <Badge variant="outline" className="font-mono">
+            Test-set size: {testSetSize ? `${testSetSize} cases` : "Not reported"}
           </Badge>
-
-          <Button
-            size="sm"
-            onClick={handleRunEval}
-            disabled={evalRunning}
-            className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold gap-1.5 shadow-xs"
-          >
-            <Play className="h-3.5 w-3.5" />
-            <span>{evalRunning ? "Executing Eval Harness..." : "Run Evaluation Benchmark"}</span>
+          <Button onClick={handleRunEval} disabled={evalRunning}>
+            {evalRunning ? <RotateCw className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
+            {evalRunning ? "Running evaluation…" : "Run evaluation"}
           </Button>
         </div>
-      </div>
+      </header>
 
-      {evalSuccess && (
-        <div className="p-3 rounded-lg border border-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 text-xs flex items-center gap-2">
-          <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
-          <span>{evalSuccess}</span>
+      {error && <div role="alert" className="rounded-lg border border-rose-300 bg-rose-50 p-3 text-sm text-rose-800">{error}</div>}
+      {message && <div role="status" className="flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-800"><CheckCircle2 className="h-4 w-4" />{message}</div>}
+
+      <section aria-labelledby="metrics-heading" className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 id="metrics-heading" className="text-lg font-bold">Six measurable outcomes</h2>
+          <span className="text-xs text-muted-foreground">Baseline: simulated manual process</span>
         </div>
-      )}
+        {loading ? (
+          <div className="py-12 text-center text-sm text-muted-foreground" role="status">Loading metrics…</div>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {metrics.map((metric) => {
+              const hasData = metric.civicpilot !== null || metric.baseline !== null;
+              return (
+                <Card key={metric.key}>
+                  <CardHeader className="border-b bg-slate-50/60 pb-3 dark:bg-slate-900/50">
+                    <CardTitle className="text-sm">{metric.label}</CardTitle>
+                    <CardDescription className="text-xs">{metric.description}</CardDescription>
+                  </CardHeader>
+                  <CardContent className="grid grid-cols-2 gap-3 pt-4 text-center">
+                    <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 dark:bg-blue-950/30">
+                      <span className="block text-xs font-semibold text-blue-700 dark:text-blue-300">CivicPilot</span>
+                      <span className="mt-1 block text-lg font-bold">{formatValue(metric.civicpilot, metric.unit)}</span>
+                    </div>
+                    <div className="rounded-lg border bg-slate-100 p-3 dark:bg-slate-800">
+                      <span className="block text-xs font-semibold text-muted-foreground">Simulated baseline</span>
+                      <span className="mt-1 block text-lg font-bold">{formatValue(metric.baseline, metric.unit)}</span>
+                    </div>
+                    {!hasData && <p className="col-span-2 flex items-center justify-center gap-1 text-xs text-muted-foreground"><CircleHelp className="h-3.5 w-3.5" />No evaluation data available yet.</p>}
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        )}
+      </section>
 
-      {/* Slide 12 Six Measurable Metrics Scorecard */}
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-            <span>Slide 12 Scorecard: The Six Core Metrics</span>
-          </h2>
-          <span className="text-[11px] font-mono text-muted-foreground">
-            *Baseline marked as simulated (FIFO clerk queue with handoff delays)
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {scorecard?.metrics.map((metric) => (
-            <Card key={metric.key} className="border shadow-xs hover:border-blue-300 transition-all">
-              <CardHeader className="pb-2 pt-4 px-4 bg-slate-50/50 dark:bg-slate-900/50 border-b">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-sm text-slate-900 dark:text-slate-100">
-                    {metric.label}
-                  </span>
-                  <Badge
-                    variant="outline"
-                    className={`font-mono text-[10px] font-bold ${
-                      metric.direction === "positive"
-                        ? "border-emerald-300 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/30"
-                        : "border-slate-300 text-slate-700"
-                    }`}
-                  >
-                    {metric.delta}
-                  </Badge>
-                </div>
-              </CardHeader>
-              <CardContent className="pt-3 px-4 pb-4 space-y-3">
-                <div className="grid grid-cols-2 gap-2 text-center">
-                  <div className="p-2 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900">
-                    <span className="text-[10px] text-blue-700 dark:text-blue-300 block font-semibold">
-                      CivicPilot
-                    </span>
-                    <span className="text-lg font-black text-blue-900 dark:text-blue-100">
-                      {metric.civicpilot}
-                    </span>
-                  </div>
-
-                  <div className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
-                    <span className="text-[10px] text-muted-foreground block font-semibold">
-                      Simulated Baseline*
-                    </span>
-                    <span className="text-lg font-black text-slate-600 dark:text-slate-400">
-                      {metric.manual_baseline}
-                    </span>
-                  </div>
-                </div>
-
-                <p className="text-[11px] text-muted-foreground leading-relaxed">
-                  {metric.description}
-                </p>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </div>
-
-      {/* Comparison Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Rate Comparison Chart */}
-        <Card className="border shadow-xs">
-          <CardHeader className="pb-3 border-b bg-slate-50/50 dark:bg-slate-900/50">
-            <CardTitle className="text-sm font-bold">Accuracy &amp; Completion Comparison (%)</CardTitle>
-            <CardDescription className="text-xs">
-              Direct rate comparison against simulated baseline across 60 benchmark grievances.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="pt-4 h-64">
+      <Card>
+        <CardHeader className="border-b bg-slate-50/60 dark:bg-slate-900/50">
+          <CardTitle className="text-sm">Available comparison data</CardTitle>
+          <CardDescription className="text-xs">Values are read from GET /api/metrics/summary and evaluation results; unsupported measures are intentionally left empty.</CardDescription>
+        </CardHeader>
+        <CardContent className="h-72 pt-5">
+          {chartData.length ? (
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={rateComparisonData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+              <BarChart data={chartData} margin={{ top: 8, right: 12, left: 4, bottom: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.3} />
-                <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-                <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} />
-                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
-                <Legend wrapperStyle={{ fontSize: 11, paddingTop: 6 }} />
-                <Bar dataKey="CivicPilot (Autonomous)" fill="#2563eb" radius={[4, 4, 0, 0]} />
+                <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                <YAxis tick={{ fontSize: 11 }} />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="CivicPilot" fill="#2563eb" radius={[4, 4, 0, 0]} />
                 <Bar dataKey="Simulated Manual Baseline" fill="#94a3b8" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
-        {/* Time & Effort Reduction Chart */}
-        <Card className="border shadow-xs">
-          <CardHeader className="pb-3 border-b bg-slate-50/50 dark:bg-slate-900/50">
-            <CardTitle className="text-sm font-bold">Efficiency &amp; Resolution Reduction</CardTitle>
-            <CardDescription className="text-xs">
-              Time to resolution (hours) and total manual clerk labor hours saved.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="pt-4 h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={timeComparisonData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.3} />
-                <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-                <YAxis tick={{ fontSize: 10 }} />
-                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
-                <Legend wrapperStyle={{ fontSize: 11, paddingTop: 6 }} />
-                <Bar dataKey="CivicPilot (Autonomous)" fill="#10b981" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="Simulated Manual Baseline" fill="#cbd5e1" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Department Breakdown Table */}
-      {scorecard?.department_breakdown && (
-        <Card className="border shadow-xs">
-          <CardHeader className="pb-3 border-b bg-slate-50/50 dark:bg-slate-900/50">
-            <CardTitle className="text-sm font-bold flex items-center gap-2">
-              <Layers className="h-4 w-4 text-blue-600" />
-              <span>Departmental Resolution Breakdown (60-Case Benchmark)</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 dark:bg-slate-900/80 border-b font-mono text-muted-foreground uppercase text-[10px]">
-                  <tr>
-                    <th className="py-2.5 px-4">Municipal Department</th>
-                    <th className="py-2.5 px-4 text-center">Test Cases</th>
-                    <th className="py-2.5 px-4 text-center">Resolved</th>
-                    <th className="py-2.5 px-4 text-center">Avg Hours</th>
-                    <th className="py-2.5 px-4 text-center">Routing Accuracy</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {scorecard.department_breakdown.map((row) => (
-                    <tr key={row.department} className="hover:bg-slate-50/60 dark:hover:bg-slate-900/40">
-                      <td className="py-2.5 px-4 font-semibold text-slate-800 dark:text-slate-200">
-                        {row.department}
-                      </td>
-                      <td className="py-2.5 px-4 text-center font-mono">{row.cases}</td>
-                      <td className="py-2.5 px-4 text-center font-mono text-emerald-600 font-bold">
-                        {row.resolved}
-                      </td>
-                      <td className="py-2.5 px-4 text-center font-mono">{row.avg_hours}h</td>
-                      <td className="py-2.5 px-4 text-center font-mono font-bold text-blue-600">
-                        {row.accuracy_pct}%
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          ) : (
+            <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
+              <CircleHelp className="h-6 w-6" />
+              <p>No metrics have been reported. Run an evaluation after the backend has a test set.</p>
             </div>
-          </CardContent>
-        </Card>
-      )}
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

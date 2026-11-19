@@ -25,6 +25,7 @@ import {
 
 export default function OfficerCasesPage() {
   const [cases, setCases] = useState<CaseState[]>([]);
+  const [allCases, setAllCases] = useState<CaseState[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
@@ -33,15 +34,17 @@ export default function OfficerCasesPage() {
 
   const fetchCases = useCallback(async () => {
     try {
-      const res = await listCases({
-        status: statusFilter,
-        department: deptFilter,
-        urgency: urgencyFilter,
-        search: search.trim() || undefined,
-      });
-      if (res.data?.cases) {
-        setCases(res.data.cases);
-      }
+      const [filteredResponse, allResponse] = await Promise.all([
+        listCases({
+          status: statusFilter,
+          department: deptFilter,
+          urgency: urgencyFilter,
+          search: search.trim() || undefined,
+        }),
+        listCases(),
+      ]);
+      setCases(filteredResponse.data.cases);
+      setAllCases(allResponse.data.cases);
     } catch (err) {
       console.error("Failed to load cases:", err);
     } finally {
@@ -50,6 +53,8 @@ export default function OfficerCasesPage() {
   }, [statusFilter, deptFilter, urgencyFilter, search]);
 
   useEffect(() => {
+    // Load external API state on mount and poll for new cases.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchCases();
     // Live update every 3 seconds
     const interval = setInterval(fetchCases, 3000);
@@ -57,10 +62,10 @@ export default function OfficerCasesPage() {
   }, [fetchCases]);
 
   // Compute live counters
-  const openCount = cases.filter((c) => c.status !== CaseStatus.CLOSED).length;
-  const atRiskCount = cases.filter((c) => c.status === CaseStatus.AT_RISK).length;
-  const needsHumanCount = cases.filter((c) => c.flags.needs_human || c.status === CaseStatus.NEEDS_HUMAN).length;
-  const closedCount = cases.filter((c) => c.status === CaseStatus.CLOSED).length;
+  const openCount = allCases.filter((c) => c.status !== CaseStatus.CLOSED).length;
+  const atRiskCount = allCases.filter((c) => c.status === CaseStatus.AT_RISK).length;
+  const needsHumanCount = allCases.filter((c) => c.flags.needs_human || c.status === CaseStatus.NEEDS_HUMAN).length;
+  const closedCount = allCases.filter((c) => c.status === CaseStatus.CLOSED).length;
 
   const getUrgencyBadge = (urgency?: Urgency) => {
     switch (urgency) {

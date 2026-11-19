@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useAuthStore } from "@/lib/stores/authStore";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,17 +17,12 @@ import {
   LogOut,
   ChevronRight,
 } from "lucide-react";
-import { useEffect, useState } from "react";
-import { isMockMode } from "@/lib/api/endpoints";
 
 export function Navbar() {
   const pathname = usePathname();
+  const router = useRouter();
   const { isAuthenticated, logout } = useAuthStore();
-  const [mockActive, setMockActive] = useState<boolean>(true);
-
-  useEffect(() => {
-    setMockActive(isMockMode());
-  }, []);
+  const mockActive = process.env.NEXT_PUBLIC_USE_MOCKS === "true" || process.env.NEXT_PUBLIC_USE_MOCKS === "1";
 
   const navLinks = [
     { href: "/", label: "Overview", icon: Bot },
@@ -94,7 +89,10 @@ export function Navbar() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => logout()}
+                onClick={() => {
+                  logout();
+                  router.push("/officer/login");
+                }}
                 className="gap-1.5 text-xs text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20"
               >
                 <LogOut className="h-3.5 w-3.5" />

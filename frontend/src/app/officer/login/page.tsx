@@ -5,10 +5,10 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Shield, KeyRound, ArrowRight, Lock, CheckCircle2 } from "lucide-react";
+import { Shield, KeyRound, Lock } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/authStore";
 import { login } from "@/lib/api/endpoints";
+import { getErrorMessage } from "@/lib/api/errorMessage";
 
 export default function OfficerLoginPage() {
   const [password, setPassword] = useState("");
@@ -16,6 +16,7 @@ export default function OfficerLoginPage() {
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
   const { login: setAuthToken } = useAuthStore();
+  const mockMode = process.env.NEXT_PUBLIC_USE_MOCKS === "true" || process.env.NEXT_PUBLIC_USE_MOCKS === "1";
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -29,8 +30,8 @@ export default function OfficerLoginPage() {
         setAuthToken(res.data.token);
         router.push("/officer/cases");
       }
-    } catch (err: any) {
-      setError(err.response?.data?.error?.message || "Invalid officer credentials");
+    } catch (err) {
+      setError(getErrorMessage(err, "Invalid officer credentials"));
     } finally {
       setLoading(false);
     }
@@ -95,22 +96,22 @@ export default function OfficerLoginPage() {
             </Button>
           </form>
 
-          <div className="pt-4 border-t text-center space-y-3">
-            <div className="text-[11px] text-muted-foreground">
-              Demo / Mock Mode Environment Active
+          {mockMode && (
+            <div className="space-y-3 border-t pt-4 text-center">
+              <div className="text-[11px] text-muted-foreground">Mock mode is active; no backend credentials are needed.</div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleDemoQuickLogin}
+                disabled={loading}
+                className="w-full border-dashed border-blue-300 text-xs font-mono text-blue-700 hover:bg-blue-50 dark:text-blue-300 dark:hover:bg-blue-950/30"
+              >
+                <KeyRound className="mr-1.5 h-3.5 w-3.5 text-blue-600" />
+                <span>One-Click Demo Officer Login</span>
+              </Button>
             </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleDemoQuickLogin}
-              disabled={loading}
-              className="w-full text-xs font-mono border-dashed border-blue-300 text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/30"
-            >
-              <KeyRound className="h-3.5 w-3.5 mr-1.5 text-blue-600" />
-              <span>One-Click Demo Officer Login</span>
-            </Button>
-          </div>
+          )}
         </CardContent>
       </Card>
     </div>

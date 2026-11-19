@@ -25,27 +25,46 @@ function TrackCaseContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const { events, status: sseStatus, refetch } = useSSE(caseId);
+  const { events, status: sseStatus, refetch } = useSSE(caseId, token);
 
   useEffect(() => {
     async function loadCase() {
       if (!caseId) return;
+      if (!token) {
+        setError("This tracking link is missing its access token. Open the complete link shared when the report was filed.");
+        setLoading(false);
+        return;
+      }
       try {
         setLoading(true);
-        const res = await getCase(caseId);
+        setError(null);
+        const res = await getCase(caseId, token);
         if (res.data) {
           setCaseState(res.data);
         } else {
           setError("Case not found");
         }
-      } catch (err: any) {
-        setError(err.message || "Failed to load case");
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to load case");
       } finally {
         setLoading(false);
       }
     }
     loadCase();
-  }, [caseId]);
+  }, [caseId, token]);
+
+  useEffect(() => {
+    if (!caseId || !token || !caseState?.id) return;
+    const interval = setInterval(async () => {
+      try {
+        const response = await getCase(caseId, token);
+        setCaseState(response.data);
+      } catch {
+        // Preserve the last known state while polling retries.
+      }
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [caseId, caseState?.id, token]);
 
   if (loading) {
     return (
@@ -91,7 +110,7 @@ function TrackCaseContent() {
 
         <div className="flex items-center gap-2 text-xs font-mono">
           <ShieldCheck className="h-4 w-4 text-emerald-600" />
-          <span>Access Token Verified</span>
+          <span>Private tracking link verified</span>
         </div>
       </div>
 
@@ -149,12 +168,13 @@ function TrackCaseContent() {
       {/* Notifications & Evidence */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <NotificationInbox events={events} />
-        <EvidenceUpload caseId={caseState.id} onSubmitted={refetch} />
+        <EvidenceUpload caseId={caseState.id} accessToken={token || undefined} onSubmitted={refetch} />
       </div>
 
       {/* Confirm / Dispute closure */}
       <ConfirmClosure
         caseState={caseState}
+        accessToken={token || undefined}
         onUpdated={(updated) => setCaseState(updated)}
       />
     </div>

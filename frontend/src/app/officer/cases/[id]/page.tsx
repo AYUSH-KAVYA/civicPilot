@@ -11,6 +11,7 @@ import {
   sandboxRepairPhoto,
   resolveCase,
 } from "@/lib/api/endpoints";
+import { getErrorMessage } from "@/lib/api/errorMessage";
 import { useSSE } from "@/lib/hooks/useSSE";
 import { CaseState, CaseStatus, Urgency } from "@/lib/api/types";
 import { EventTimeline } from "@/components/case/EventTimeline";
@@ -68,6 +69,8 @@ function CaseDetailContent() {
   }, [caseId]);
 
   useEffect(() => {
+    // Load external API state on mount and keep the detail view current.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchCaseDetails();
     const interval = setInterval(fetchCaseDetails, 3000);
     return () => clearInterval(interval);
@@ -86,8 +89,8 @@ function CaseDetailContent() {
       refetch();
       fetchCaseDetails();
       setTimeout(() => setActionMessage(""), 4000);
-    } catch (err: any) {
-      alert("Error: " + err.message);
+    } catch (err) {
+      setActionMessage(getErrorMessage(err, "Ticket rejection failed."));
     } finally {
       setActionLoading(false);
     }
@@ -102,8 +105,8 @@ function CaseDetailContent() {
       refetch();
       fetchCaseDetails();
       setTimeout(() => setActionMessage(""), 4000);
-    } catch (err: any) {
-      alert("Error: " + err.message);
+    } catch (err) {
+      setActionMessage(getErrorMessage(err, "Crew no-show signal failed."));
     } finally {
       setActionLoading(false);
     }
@@ -118,8 +121,8 @@ function CaseDetailContent() {
       refetch();
       fetchCaseDetails();
       setTimeout(() => setActionMessage(""), 4000);
-    } catch (err: any) {
-      alert("Error: " + err.message);
+    } catch (err) {
+      setActionMessage(getErrorMessage(err, "Crew check-in signal failed."));
     } finally {
       setActionLoading(false);
     }
@@ -134,8 +137,8 @@ function CaseDetailContent() {
       refetch();
       fetchCaseDetails();
       setTimeout(() => setActionMessage(""), 4000);
-    } catch (err: any) {
-      alert("Error: " + err.message);
+    } catch (err) {
+      setActionMessage(getErrorMessage(err, "Repair evidence upload failed."));
     } finally {
       setActionLoading(false);
     }
@@ -151,8 +154,8 @@ function CaseDetailContent() {
       setActionMessage("Grievance unblocked and returned to autonomous execution!");
       refetch();
       setTimeout(() => setActionMessage(""), 4000);
-    } catch (err: any) {
-      alert("Error resolving case: " + err.message);
+    } catch (err) {
+      setActionMessage(getErrorMessage(err, "Could not resolve the case."));
     } finally {
       setActionLoading(false);
     }
@@ -179,6 +182,7 @@ function CaseDetailContent() {
   }
 
   const isCase1042 = caseState.id === "1042";
+  const hasTicket = caseState.tickets.length > 0;
 
   return (
     <div className="container mx-auto max-w-7xl px-4 py-6 space-y-6">
@@ -360,7 +364,7 @@ function CaseDetailContent() {
                   variant="outline"
                   size="sm"
                   onClick={handleRejectTicket}
-                  disabled={actionLoading}
+                  disabled={actionLoading || !hasTicket}
                   className="text-xs border-rose-200 hover:bg-rose-50 text-rose-700 dark:hover:bg-rose-950/30"
                 >
                   <RotateCcw className="h-3 w-3 mr-1" />
@@ -371,7 +375,7 @@ function CaseDetailContent() {
                   variant="outline"
                   size="sm"
                   onClick={handleCrewNoShow}
-                  disabled={actionLoading}
+                  disabled={actionLoading || !hasTicket}
                   className="text-xs border-amber-200 hover:bg-amber-50 text-amber-700 dark:hover:bg-amber-950/30"
                 >
                   <Clock className="h-3 w-3 mr-1" />
@@ -382,7 +386,7 @@ function CaseDetailContent() {
                   variant="outline"
                   size="sm"
                   onClick={handleCrewCheckin}
-                  disabled={actionLoading}
+                  disabled={actionLoading || !hasTicket}
                   className="text-xs border-emerald-200 hover:bg-emerald-50 text-emerald-700 dark:hover:bg-emerald-950/30"
                 >
                   <Truck className="h-3 w-3 mr-1" />
@@ -393,7 +397,7 @@ function CaseDetailContent() {
                   variant="outline"
                   size="sm"
                   onClick={handleRepairPhoto}
-                  disabled={actionLoading}
+                  disabled={actionLoading || !hasTicket}
                   className="text-xs border-teal-200 hover:bg-teal-50 text-teal-700 dark:hover:bg-teal-950/30"
                 >
                   <Camera className="h-3 w-3 mr-1" />
@@ -433,7 +437,7 @@ function CaseDetailContent() {
           <CaseMapView caseState={caseState} />
 
           {/* Policy Chunks Cited */}
-          <PolicyChunks caseState={caseState} />
+          <PolicyChunks caseState={caseState} events={events} />
         </div>
       </div>
     </div>

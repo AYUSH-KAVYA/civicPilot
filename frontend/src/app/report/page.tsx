@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -40,6 +40,7 @@ export default function ReportPage() {
   const [lng, setLng] = useState(-122.4065);
   const [photo, setPhoto] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   // Active submitted case
   const [activeCase, setActiveCase] = useState<CaseState | null>(null);
@@ -47,21 +48,40 @@ export default function ReportPage() {
   const [copiedLink, setCopiedLink] = useState(false);
 
   // Live SSE stream for active case
-  const { events, status: sseStatus, refetch } = useSSE(activeCase ? activeCase.id : null);
+  const { events, status: sseStatus, refetch } = useSSE(activeCase ? activeCase.id : null, accessToken);
+
+  useEffect(() => {
+    if (!activeCase?.id || !accessToken) return;
+    const refreshCase = async () => {
+      try {
+        const response = await getCase(activeCase.id, accessToken);
+        setActiveCase(response.data);
+      } catch {
+        // Keep the last known state visible while the stream retries.
+      }
+    };
+    const interval = setInterval(refreshCase, 3000);
+    return () => clearInterval(interval);
+  }, [activeCase?.id, accessToken]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!text.trim()) {
-      alert("Please enter a description of the issue.");
+      setSubmitError("Please enter a description of the issue.");
+      return;
+    }
+    if (!contact.trim()) {
+      setSubmitError("Add a phone number or email so the city can send case updates.");
       return;
     }
 
     setSubmitting(true);
+    setSubmitError(null);
     try {
       const fd = new FormData();
       fd.append("text", text);
       fd.append("language", language);
-      fd.append("contact", contact || "+15550192834");
+      fd.append("contact", contact.trim());
       fd.append("address_text", address);
       fd.append("lat", lat.toString());
       fd.append("lng", lng.toString());
@@ -72,11 +92,11 @@ export default function ReportPage() {
       if (res.data) {
         setAccessToken(res.data.access_token);
         // Fetch created case details
-        const caseRes = await getCase(res.data.case_id);
+        const caseRes = await getCase(res.data.case_id, res.data.access_token);
         setActiveCase(caseRes.data);
       }
-    } catch (err: any) {
-      alert("Failed to submit grievance: " + (err.message || "Unknown error"));
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Unable to submit your report. Please try again.");
     } finally {
       setSubmitting(false);
     }
@@ -149,9 +169,14 @@ export default function ReportPage() {
             </CardHeader>
 
             <CardContent className="pt-5 space-y-4">
+              {submitError && (
+                <div role="alert" className="rounded-lg border border-rose-300 bg-rose-50 p-3 text-sm text-rose-800">
+                  {submitError}
+                </div>
+              )}
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  <label htmlFor="incident-description" className="text-xs font-semibold text-slate-700 dark:text-slate-300">
                     Incident Description *
                   </label>
                   <VoiceInput
@@ -160,6 +185,7 @@ export default function ReportPage() {
                   />
                 </div>
                 <Textarea
+                  id="incident-description"
                   value={text}
                   onChange={(e) => setText(e.target.value)}
                   placeholder="e.g. Major water main break near 5th and Market. Water is pouring into the street and flooding the sidewalk near the bus stop..."
@@ -172,7 +198,7 @@ export default function ReportPage() {
               {/* Media upload + Contact */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                  <label htmlFor="citizen-contact" className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
                     Attach Incident Photo / Evidence
                   </label>
                   <label className="border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-blue-500 rounded-xl p-4 flex flex-col items-center justify-center cursor-pointer transition-colors bg-slate-50/50 dark:bg-slate-900/30">
@@ -197,10 +223,14 @@ export default function ReportPage() {
                     Your Contact (SMS / Email for Updates)
                   </label>
                   <Input
+                    id="citizen-contact"
+                    type="text"
                     value={contact}
                     onChange={(e) => setContact(e.target.value)}
                     placeholder="+1 (555) 019-2834 or citizen@sf.gov"
                     className="text-sm"
+                    required
+                    aria-label="Phone number or email for updates"
                   />
                   <div className="mt-2 text-[11px] text-muted-foreground flex items-center gap-1.5">
                     <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
@@ -329,12 +359,13 @@ export default function ReportPage() {
           {/* Notifications & Evidence in 2 cols */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <NotificationInbox events={events} />
-            <EvidenceUpload caseId={activeCase.id} onSubmitted={refetch} />
+            <EvidenceUpload caseId={activeCase.id} accessToken={accessToken} onSubmitted={refetch} />
           </div>
 
           {/* Confirm or Dispute Closure */}
           <ConfirmClosure
             caseState={activeCase}
+            accessToken={accessToken}
             onUpdated={(updated) => setActiveCase(updated)}
           />
         </div>

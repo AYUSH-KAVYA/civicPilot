@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
+import type { LeafletMouseEvent, Map as LeafletMap, Marker } from "leaflet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { MapPin, Navigation, Crosshair, Check } from "lucide-react";
+import { MapPin, Navigation, Crosshair } from "lucide-react";
 
 interface LocationPickerProps {
   lat: number;
@@ -18,27 +19,24 @@ export function LocationPicker({
   address,
   onChange,
 }: LocationPickerProps) {
-  const [mapLoaded, setMapLoaded] = useState(false);
   const [locating, setLocating] = useState(false);
-  const [addressInput, setAddressInput] = useState(address);
   const mapContainerRef = useRef<HTMLDivElement>(null);
-  const mapInstanceRef = useRef<any>(null);
-  const markerRef = useRef<any>(null);
+  const mapInstanceRef = useRef<LeafletMap | null>(null);
+  const markerRef = useRef<Marker | null>(null);
+  const latestLocationRef = useRef({ lat, lng, onChange });
 
   useEffect(() => {
-    setAddressInput(address);
-  }, [address]);
+    latestLocationRef.current = { lat, lng, onChange };
+  }, [lat, lng, onChange]);
 
   useEffect(() => {
-    let isMounted = true;
-
     async function initMap() {
       if (typeof window === "undefined" || !mapContainerRef.current) return;
       try {
         const L = (await import("leaflet")).default;
 
         // Leaflet icon fix
-        delete (L.Icon.Default.prototype as any)._getIconUrl;
+        delete (L.Icon.Default.prototype as unknown as { _getIconUrl?: unknown })._getIconUrl;
         L.Icon.Default.mergeOptions({
           iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
           iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
@@ -46,30 +44,30 @@ export function LocationPicker({
         });
 
         if (!mapInstanceRef.current && mapContainerRef.current) {
-          const map = L.map(mapContainerRef.current).setView([lat, lng], 14);
+          const currentLocation = latestLocationRef.current;
+          const map = L.map(mapContainerRef.current).setView([currentLocation.lat, currentLocation.lng], 14);
           L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
             attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
             maxZoom: 19,
           }).addTo(map);
 
-          const marker = L.marker([lat, lng], { draggable: true }).addTo(map);
+          const marker = L.marker([currentLocation.lat, currentLocation.lng], { draggable: true }).addTo(map);
 
-          marker.on("dragend", async () => {
+          marker.on("dragend", () => {
             const position = marker.getLatLng();
             const newLat = position.lat;
             const newLng = position.lng;
             const formatted = `Lat: ${newLat.toFixed(4)}, Lng: ${newLng.toFixed(4)}`;
-            onChange(newLat, newLng, formatted);
+            latestLocationRef.current.onChange(newLat, newLng, formatted);
           });
 
-          map.on("click", (e: any) => {
+          map.on("click", (e: LeafletMouseEvent) => {
             marker.setLatLng(e.latlng);
-            onChange(e.latlng.lat, e.latlng.lng, `Location near [${e.latlng.lat.toFixed(4)}, ${e.latlng.lng.toFixed(4)}]`);
+            latestLocationRef.current.onChange(e.latlng.lat, e.latlng.lng, `Location near [${e.latlng.lat.toFixed(4)}, ${e.latlng.lng.toFixed(4)}]`);
           });
 
           mapInstanceRef.current = map;
           markerRef.current = marker;
-          if (isMounted) setMapLoaded(true);
         }
       } catch (err) {
         console.error("Leaflet map init error:", err);
@@ -79,7 +77,6 @@ export function LocationPicker({
     initMap();
 
     return () => {
-      isMounted = false;
       if (mapInstanceRef.current) {
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;
@@ -99,8 +96,6 @@ export function LocationPicker({
         const userLng = pos.coords.longitude;
         const locDesc = `Current GPS Location (${userLat.toFixed(4)}, ${userLng.toFixed(4)})`;
         onChange(userLat, userLng, locDesc);
-        setAddressInput(locDesc);
-
         if (mapInstanceRef.current && markerRef.current) {
           mapInstanceRef.current.setView([userLat, userLng], 15);
           markerRef.current.setLatLng([userLat, userLng]);
@@ -115,19 +110,14 @@ export function LocationPicker({
     );
   };
 
-  const handleAddressBlur = () => {
-    onChange(lat, lng, addressInput);
-  };
-
   return (
     <div className="space-y-3">
       <div className="flex flex-col sm:flex-row gap-2">
         <div className="relative flex-1">
           <MapPin className="absolute left-3 top-3 h-4 w-4 text-blue-600" />
           <Input
-            value={addressInput}
-            onChange={(e) => setAddressInput(e.target.value)}
-            onBlur={handleAddressBlur}
+            value={address}
+            onChange={(e) => onChange(lat, lng, e.target.value)}
             placeholder="Street address or landmark (e.g. Oak St & 5th Ave)"
             className="pl-9 text-sm"
           />

@@ -9,7 +9,9 @@ import {
   sandboxCrewNoShow,
   sandboxRepairPhoto,
   triggerTick,
+  listCases,
 } from "@/lib/api/endpoints";
+import { getErrorMessage } from "@/lib/api/errorMessage";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -33,23 +35,45 @@ import {
 export default function DemoPage() {
   const [simTime, setSimTime] = useState<string>("");
   const [runningScenario, setRunningScenario] = useState<string | null>(null);
+  const [scenarioCaseIds, setScenarioCaseIds] = useState<Record<string, string>>({});
+  const [scenarioAccessTokens, setScenarioAccessTokens] = useState<Record<string, string>>({});
+  const [ticketOptions, setTicketOptions] = useState<Array<{ id: string; caseId: string }>>([]);
+  const [sandboxTicketId, setSandboxTicketId] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
-  const [logs, setLogs] = useState<Array<{ ts: string; msg: string; type: "info" | "success" | "warn" }>>([]);
+  const [logs, setLogs] = useState<Array<{ ts: string; msg: string; type: "info" | "success" | "warn" }>>([
+    { ts: "SYSTEM", msg: "CivicPilot Simulation Controller initialized.", type: "info" },
+    { ts: "SYSTEM", msg: "Simulation clock scale is configured by the backend.", type: "info" },
+  ]);
 
   // Update simulated clock & init logs
   useEffect(() => {
-    const now = new Date().toLocaleTimeString();
-    setLogs([
-      { ts: now, msg: "CivicPilot Simulation Controller initialized.", type: "info" },
-      { ts: now, msg: "SIM_TIME_SCALE=60 (1 hr = 60s simulated speed).", type: "info" },
-    ]);
-
     const updateTime = () => {
       setSimTime(new Date().toLocaleTimeString());
     };
-    updateTime();
     const timer = setInterval(updateTime, 1000);
     return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const refreshTickets = async () => {
+      try {
+        const response = await listCases();
+        const tickets = response.data.cases.flatMap((item) => item.tickets.map((ticket) => ({ id: ticket.id, caseId: item.id })));
+        if (active) {
+          setTicketOptions(tickets);
+          setSandboxTicketId((current) => current || tickets[0]?.id || "");
+        }
+      } catch {
+        // Demo controls remain idle until case/ticket data can be loaded.
+      }
+    };
+    void refreshTickets();
+    const timer = setInterval(refreshTickets, 3000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
   }, []);
 
   const addLog = (msg: string, type: "info" | "success" | "warn" = "info") => {
@@ -61,9 +85,13 @@ export default function DemoPage() {
     addLog(`Launching scenario: [${scenario.toUpperCase()}]...`, "info");
     try {
       const res = await runScenario(scenario);
+      setScenarioCaseIds((current) => ({ ...current, [scenario]: res.data.case_id }));
+      if (res.data.access_token) {
+        setScenarioAccessTokens((current) => ({ ...current, [scenario]: res.data.access_token || "" }));
+      }
       addLog(`Scenario [${scenario.toUpperCase()}] launched successfully! Target Case #${res.data.case_id}`, "success");
-    } catch (err: any) {
-      addLog(`Error executing scenario ${scenario}: ${err.message}`, "warn");
+    } catch (err) {
+      addLog(`Error executing scenario ${scenario}: ${getErrorMessage(err, "Unknown error")}`, "warn");
     } finally {
       setRunningScenario(null);
     }
@@ -73,19 +101,19 @@ export default function DemoPage() {
     try {
       await triggerTick();
       addLog("POST /api/tick triggered: Evaluated due SLA timers & cron checks.", "success");
-    } catch (err: any) {
-      addLog("Failed to ping /api/tick: " + err.message, "warn");
+    } catch (err) {
+      addLog("Failed to ping /api/tick: " + getErrorMessage(err, "Unknown error"), "warn");
     }
   };
 
-  const handleSandbox = async (action: string, fn: () => Promise<any>) => {
+  const handleSandbox = async (action: string, fn: () => Promise<unknown>) => {
     setActionLoading(true);
     addLog(`Executing sandbox signal: ${action}...`, "info");
     try {
       await fn();
       addLog(`Sandbox action '${action}' delivered to event bus!`, "success");
-    } catch (err: any) {
-      addLog(`Sandbox error: ${err.message}`, "warn");
+    } catch (err) {
+      addLog(`Sandbox error: ${getErrorMessage(err, "Unknown error")}`, "warn");
     } finally {
       setActionLoading(false);
     }
@@ -109,7 +137,7 @@ export default function DemoPage() {
         <div className="flex items-center gap-3 p-2.5 rounded-xl border bg-slate-900 text-white shadow-xs font-mono text-xs">
           <Clock className="h-4 w-4 text-amber-400 animate-spin" style={{ animationDuration: "10s" }} />
           <div>
-            <div className="text-[10px] text-slate-400">SIM_TIME_SCALE (60x)</div>
+            <div className="text-[10px] text-slate-400">SIM_TIME_SCALE · backend configured</div>
             <div className="font-bold text-sm text-emerald-400">{simTime || "12:00:00 PM"}</div>
           </div>
           <Button
@@ -133,7 +161,7 @@ export default function DemoPage() {
               <Badge className="bg-emerald-600 text-white text-[10px] font-bold">
                 SCENARIO 1 &bull; HAPPY PATH
               </Badge>
-              <Link href="/officer/cases/1001">
+              <Link href={`/officer/cases/${scenarioCaseIds.happy || "1001"}`}>
                 <Badge variant="outline" className="text-[10px] font-mono hover:bg-emerald-100">
                   Inspect Case #1001 &rarr;
                 </Badge>
@@ -167,7 +195,7 @@ export default function DemoPage() {
               <Badge className="bg-amber-600 text-white text-[10px] font-bold">
                 SCENARIO 2 &bull; DISRUPTION
               </Badge>
-              <Link href="/officer/cases/1002">
+              <Link href={`/officer/cases/${scenarioCaseIds.disruption || "1002"}`}>
                 <Badge variant="outline" className="text-[10px] font-mono hover:bg-amber-100">
                   Inspect Case #1002 &rarr;
                 </Badge>
@@ -201,7 +229,7 @@ export default function DemoPage() {
               <Badge className="bg-orange-600 text-white text-[10px] font-bold">
                 SCENARIO 3 &bull; AMBIGUITY
               </Badge>
-              <Link href="/officer/cases/1003">
+              <Link href={`/officer/cases/${scenarioCaseIds.ambiguity || "1003"}`}>
                 <Badge variant="outline" className="text-[10px] font-mono hover:bg-orange-100">
                   Inspect Case #1003 &rarr;
                 </Badge>
@@ -235,7 +263,7 @@ export default function DemoPage() {
               <Badge className="bg-red-600 text-white text-[10px] font-bold animate-pulse">
                 CASE 1042 &bull; CRITICAL SIGN-OFF
               </Badge>
-              <Link href="/officer/cases/1042">
+              <Link href={`/officer/cases/${scenarioCaseIds.case1042 || "1042"}`}>
                 <Badge variant="outline" className="text-[10px] font-mono hover:bg-red-100 border-red-300">
                   Inspect Case #1042 &rarr;
                 </Badge>
@@ -263,6 +291,15 @@ export default function DemoPage() {
         </Card>
       </div>
 
+      {Object.entries(scenarioCaseIds).map(([scenario, caseId]) => scenarioAccessTokens[scenario] && (
+        <div key={scenario} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-blue-50 p-3 text-sm dark:bg-blue-950/30">
+          <span>Citizen tracking link for {scenario.toUpperCase()} · case {caseId}</span>
+          <Link className="font-semibold text-blue-700 underline dark:text-blue-300" href={`/track/${encodeURIComponent(caseId)}?token=${encodeURIComponent(scenarioAccessTokens[scenario])}`}>
+            Open citizen tracker
+          </Link>
+        </div>
+      ))}
+
       {/* Sandbox Controls Card */}
       <Card className="border shadow-xs">
         <CardHeader className="pb-3 border-b bg-slate-50/50 dark:bg-slate-900/50">
@@ -275,29 +312,41 @@ export default function DemoPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="pt-4">
+          <label className="mb-3 flex flex-col gap-1 text-xs font-medium sm:max-w-sm">
+            Sandbox ticket
+            <select
+              value={sandboxTicketId}
+              onChange={(event) => setSandboxTicketId(event.target.value)}
+              className="rounded-md border border-input bg-background px-3 py-2"
+              aria-label="Sandbox ticket"
+            >
+              {ticketOptions.length === 0 && <option value="">No case tickets available</option>}
+              {ticketOptions.map((ticket) => <option key={`${ticket.caseId}-${ticket.id}`} value={ticket.id}>{ticket.id} · case {ticket.caseId}</option>)}
+            </select>
+          </label>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             <Button
               variant="outline"
-              disabled={actionLoading}
+              disabled={actionLoading || !sandboxTicketId}
               onClick={() =>
                 handleSandbox("Ticket Rejection", () =>
-                  sandboxRejectTicket("TKT-5521", "State highway route outside city bounds")
+                  sandboxRejectTicket(sandboxTicketId, "Jurisdiction review requested by demo operator")
                 )
               }
               className="text-xs border-rose-300 text-rose-700 hover:bg-rose-50 h-12 flex flex-col items-center justify-center"
             >
               <div className="font-bold flex items-center gap-1">
                 <RotateCcw className="h-3.5 w-3.5" />
-                <span>Reject Ticket (TKT-5521)</span>
+                <span>Reject Ticket</span>
               </div>
               <span className="text-[10px] text-muted-foreground mt-0.5">Adaptation Rule (a)</span>
             </Button>
 
             <Button
               variant="outline"
-              disabled={actionLoading}
+              disabled={actionLoading || !sandboxTicketId}
               onClick={() =>
-                handleSandbox("Crew No-Show", () => sandboxCrewNoShow("TKT-5521"))
+                handleSandbox("Crew No-Show", () => sandboxCrewNoShow(sandboxTicketId))
               }
               className="text-xs border-amber-300 text-amber-700 hover:bg-amber-50 h-12 flex flex-col items-center justify-center"
             >
@@ -310,9 +359,9 @@ export default function DemoPage() {
 
             <Button
               variant="outline"
-              disabled={actionLoading}
+              disabled={actionLoading || !sandboxTicketId}
               onClick={() =>
-                handleSandbox("Crew Check-In", () => sandboxCrewCheckin("TKT-5521"))
+                handleSandbox("Crew Check-In", () => sandboxCrewCheckin(sandboxTicketId))
               }
               className="text-xs border-emerald-300 text-emerald-700 hover:bg-emerald-50 h-12 flex flex-col items-center justify-center"
             >
@@ -325,9 +374,9 @@ export default function DemoPage() {
 
             <Button
               variant="outline"
-              disabled={actionLoading}
+              disabled={actionLoading || !sandboxTicketId}
               onClick={() =>
-                handleSandbox("Repair Photo Upload", () => sandboxRepairPhoto("TKT-5521"))
+                handleSandbox("Repair Photo Upload", () => sandboxRepairPhoto(sandboxTicketId))
               }
               className="text-xs border-teal-300 text-teal-700 hover:bg-teal-50 h-12 flex flex-col items-center justify-center"
             >

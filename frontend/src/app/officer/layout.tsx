@@ -1,8 +1,8 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import {
   Activity,
@@ -13,12 +13,7 @@ import {
   UserCheck,
 } from "lucide-react";
 
-function OfficerNav() {
-  const pathname = usePathname();
-  const isLoginPage = pathname === "/officer/login";
-
-  if (isLoginPage) return null;
-
+function OfficerNav({ pathname }: { pathname: string }) {
   const navItems = [
     { href: "/officer/cases", label: "Live Queue", icon: Activity },
     { href: "/officer/approvals", label: "Approvals & Review", icon: ShieldAlert },
@@ -76,11 +71,37 @@ export default function OfficerLayout({
   children: React.ReactNode;
 }) {
   return (
+    <Suspense fallback={<div className="container mx-auto px-4 py-16 text-center text-sm text-muted-foreground" role="status">Loading officer console…</div>}>
+      <OfficerLayoutContent>{children}</OfficerLayoutContent>
+    </Suspense>
+  );
+}
+
+function OfficerLayoutContent({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const isLoginPage = pathname === "/officer/login";
+  const [hasOfficerToken, setHasOfficerToken] = useState(false);
+  const isAuthenticated = isLoginPage || hasOfficerToken;
+
+  useEffect(() => {
+    if (isLoginPage) return;
+    const token = localStorage.getItem("officer_token");
+    if (!token) {
+      router.replace("/officer/login");
+      return;
+    }
+    // The effect reads a browser-only credential after hydration to gate the route.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setHasOfficerToken(true);
+  }, [isLoginPage, router]);
+
+  return (
     <div className="flex flex-col min-h-[calc(100vh-4rem)]">
-      <Suspense fallback={<div className="h-12 border-b bg-white dark:bg-slate-900" />}>
-        <OfficerNav />
-      </Suspense>
-      <div className="flex-1">{children}</div>
+      <OfficerNav pathname={pathname} />
+      <div className="flex-1">
+        {isAuthenticated ? children : <div className="container mx-auto px-4 py-16 text-center text-sm text-muted-foreground" role="status">Checking officer session…</div>}
+      </div>
     </div>
   );
 }
