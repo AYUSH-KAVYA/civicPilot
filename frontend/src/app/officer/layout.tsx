@@ -91,9 +91,8 @@ function OfficerLayoutContent({ children }: { children: React.ReactNode }) {
       router.replace("/officer/login");
       return;
     }
-    // The effect reads a browser-only credential after hydration to gate the route.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setHasOfficerToken(true);
+    // Defer the browser-only session update until after this subscription effect completes.
+    queueMicrotask(() => setHasOfficerToken(true));
   }, [isLoginPage, router]);
 
   return (
