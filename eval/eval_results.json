@@ -1,0 +1,63 @@
+{
+  "test_set_size": 60,
+  "slide_12_scorecard": {
+    "completion_rate": {
+      "manual_baseline": "70.0%",
+      "civicpilot": "95.0%",
+      "improvement": "+25.0%"
+    },
+    "routing_accuracy": {
+      "manual_baseline": "76.7%",
+      "civicpilot": "65.0%",
+      "improvement": "+-11.7%"
+    },
+    "time_to_first_action": {
+      "manual_baseline": "234.0 min",
+      "civicpilot": "0.01 sec",
+      "speedup": "1404000.0x faster"
+    },
+    "time_to_resolution": {
+      "manual_baseline": "24.3 hrs",
+      "civicpilot": "0.75 hrs",
+      "reduction": "-96.9%"
+    },
+    "escalation_precision": {
+      "manual_baseline": "85.0%",
+      "civicpilot": "56.7%",
+      "improvement": "+-28.3%"
+    },
+    "human_effort_per_case": {
+      "manual_baseline": "78.8 min",
+      "civicpilot": "7.5 min",
+      "savings": "-90.5%"
+    }
+  },
+  "baseline_summary": {
+    "test_set_size": 60,
+    "completion_rate": 0.7,
+    "completion_rate_pct": "70.0%",
+    "routing_accuracy": 0.767,
+    "routing_accuracy_pct": "76.7%",
+    "time_to_first_action_sec": 14040.0,
+    "time_to_first_action_min": 234.0,
+    "time_to_resolution_sec": 87480.0,
+    "time_to_resolution_hours": 24.3,
+    "escalation_precision": 0.85,
+    "escalation_precision_pct": "85.0%",
+    "human_effort_minutes": 78.8
+  },
+  "civicpilot_summary": {
+    "test_set_size": 60,
+    "completion_rate": 0.95,
+    "completion_rate_pct": "95.0%",
+    "routing_accuracy": 0.65,
+    "routing_accuracy_pct": "65.0%",
+    "time_to_first_action_sec": 0.01,
+    "time_to_first_action_min": 0.0,
+    "time_to_resolution_sec": 2700.0,
+    "time_to_resolution_hours": 0.75,
+    "escalation_precision": 0.567,
+    "escalation_precision_pct": "56.7%",
+    "human_effort_minutes": 7.5
+  }
+}
