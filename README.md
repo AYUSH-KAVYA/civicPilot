@@ -36,6 +36,70 @@ P1 owns the foundational FastAPI application, database layer with `pgvector`, au
 
 ---
 
+## Part 3: Orchestration, Agents, Adaptation, Guardrails & Evaluation (P3)
+
+P3 implements the core agent execution graph, Action & Evaluator agents, the 5 deck adaptation rules, safety guardrails, runnable live-demo scenarios, and the comparative evaluation harness.
+
+### Key Capabilities Built by P3:
+
+1. **Async Multi-Agent Orchestrator (`backend/app/orchestrator/`, `orchestrator/`)**:
+   - Asynchronous directed agent graph executing the Perceive -> Reason -> Plan -> Act -> Evaluate -> Adapt loop.
+   - Per-case concurrency lock (`asyncio.Lock`) preventing race conditions during asynchronous events.
+   - State persistence after *every* node transition with audit event emission.
+   - Per-node execution timeouts (30s) and exponential-backoff retries.
+   - Maximum-iteration loop breaker (25 iterations) halting infinite agent loops cleanly into `NEEDS_HUMAN`.
+   - Complete public contract API: `start_case`, `resume_case`, `handle_citizen_message`, `handle_citizen_confirmation`, `handle_approval`, `handle_sandbox_signal`.
+
+2. **Action Agent (`backend/app/agents/action.py`, `agents/action.py`)**:
+   - Evaluates dependency order (`depends_on`) before executing each plan step via `tools.call`.
+   - Dynamic parameter resolution across inter-step dependencies (`ticket_id`, `run_at`, `department_id`).
+   - Automatic execution of step fallbacks upon tool errors.
+   - Safety risk tier enforcement: routine steps auto-run; sensitive steps notify supervisors; critical steps create an `ApprovalModel` and pause execution in `awaiting_approval`.
+
+3. **Evaluator Agent (`backend/app/agents/evaluator.py`, `agents/evaluator.py`)**:
+   - Compares reality against plan steps and deadlines using `clock.now()` to determine if a case is `on track`, `at risk`, `failed`, or `verified`.
+   - Schedules periodic monitoring checks using `schedule_check`.
+   - Inspects and verifies uploaded repair photos using the Gemini vision model (with mock fallback).
+   - Manages state transitions: `IN_PROGRESS` -> `AWAITING_CONFIRMATION` -> `CLOSED`.
+
+4. **Five Adaptation Rules (`backend/app/adaptation/`, `adaptation/`)**:
+   - **Rule (a) Ticket Rejection**: Re-reads policy via `policy_search` and re-routes through `planner.replan`.
+   - **Rule (b) Deadline Imminent / Crew No-Show**: Escalates urgency one level (`low` -> `medium` -> `high` -> `critical`) and reprioritizes work orders.
+   - **Rule (c) Supplemental Citizen Evidence**: Incorporates new text/photos into state, re-runs triage, and replans.
+   - **Rule (d) Duplicate Complaints Cluster**: Detects spatial and vector duplicate clusters, merges into active area work order, and sets `flags.merged_into`.
+   - **Rule (e) Citizen Disputes Closure**: Reopens case (`REOPENED`), increments `reopen_count`, and flags for officer review (`flags.needs_human = True`).
+
+5. **Safety Guardrails (`backend/app/guardrails/`, `guardrails/`)**:
+   - **Confidence Threshold**: Any report below `CONFIDENCE_THRESHOLD = 0.65` immediately halts into `NEEDS_HUMAN` with a structured reasoning packet.
+   - **Risk Tiers Enforcement**: Rigorous boundaries for `routine`, `sensitive`, and `critical` operations.
+   - **PII Masking**: Comprehensive regex scrubbing for emails, phone numbers, SSNs, and credit card numbers across all logs and details.
+   - **Prompt-Injection Hygiene**: Citizen input is treated strictly as untrusted data, sanitized, and isolated within `<CITIZEN_REPORT>` tags.
+   - **Audit Completeness Check**: Verifies that every state transition and agent decision emits a corresponding audit event.
+
+6. **Live Demo Scenarios (`backend/app/scenarios/`, `scenarios/`)**:
+   - Powered by `SIM_TIME_SCALE` so multi-hour/multi-day timelines play out in ~3 minutes (or seconds during tests):
+     - **Happy Path (`scenarios/happy.py`)**: Urgent water leak resolved to verified closure.
+     - **Disruption (`scenarios/disruption.py`)**: Ticket rejected by roads department, automatically adapted, re-routed, and resolved.
+     - **Ambiguity (`scenarios/ambiguity.py`)**: Vague citizen report stopped safely by confidence guardrail for human triage.
+     - **Case 1042 (`scenarios/case1042.py`)**: High-voltage electrical wire sparking near elementary school requiring supervisor approval.
+   - Unified CLI runner: `python scenarios/run.py [happy|disruption|ambiguity|case1042]`.
+
+7. **Slide 12 Evaluation Harness (`backend/app/eval/`, `eval/`)**:
+   - Replays P2's 60-grievance dataset (`eval/datasets/grievances.json`) with injected disruptions.
+   - Compares the **Simulated Manual Baseline** (FIFO queue, clerk delays, handoff delays in `baseline_config.json`) against **CivicPilot**.
+   - Computes all 6 metrics from Slide 12:
+     1. Completion Rate
+     2. Routing Accuracy
+     3. Time to First Action
+     4. Time to Resolution
+     5. Escalation Precision
+     6. Human Effort per Case
+   - Persists benchmark records into `eval_runs` and `eval_results` database tables.
+   - Exports results to `eval/eval_results.json` and `eval/eval_results.csv`.
+   - CLI runner: `python eval/runner.py`.
+
+---
+
 ## Getting Started
 
 ### Local Setup (Virtual Environment)
