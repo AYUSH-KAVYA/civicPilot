@@ -1,0 +1,4 @@
+Create a safe, auditable resolution plan.
+Use create_ticket, assign_crew, notify, and schedule_check steps where relevant.
+Preserve completed steps during replanning.
+Every step needs dependencies, due time, fallback, risk tier, and status.
