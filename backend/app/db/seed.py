@@ -293,7 +293,22 @@ async def seed_database(session: AsyncSession) -> None:
 
     # 2. Wards & Offices
     for w in WARDS_DATA:
-        # Check office first
+        # Check and insert ward first so foreign keys succeed
+        existing_ward = await session.get(WardModel, w["id"])
+        if not existing_ward:
+            polygon = make_geojson_polygon(w["min_lat"], w["max_lat"], w["min_lng"], w["max_lng"])
+            ward = WardModel(
+                id=w["id"],
+                name=w["name"],
+                office_id=w["office_id"],
+                boundary_geojson=polygon,
+            )
+            session.add(ward)
+
+    await session.flush()
+
+    for w in WARDS_DATA:
+        # Now insert office referencing ward_id
         office_data = w["office"]
         existing_office = await session.get(OfficeModel, office_data["id"])
         if not existing_office:
@@ -306,18 +321,6 @@ async def seed_database(session: AsyncSession) -> None:
                 lng=office_data["lng"],
             )
             session.add(office)
-
-        # Check ward
-        existing_ward = await session.get(WardModel, w["id"])
-        if not existing_ward:
-            polygon = make_geojson_polygon(w["min_lat"], w["max_lat"], w["min_lng"], w["max_lng"])
-            ward = WardModel(
-                id=w["id"],
-                name=w["name"],
-                office_id=w["office_id"],
-                boundary_geojson=polygon,
-            )
-            session.add(ward)
 
     # 3. Crews
     for crew_data in CREWS_DATA:
