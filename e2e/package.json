@@ -1,0 +1,14 @@
+{
+  "name": "civicpilot-e2e",
+  "version": "1.0.0",
+  "description": "CivicPilot End-to-End Playwright Tests (P4 Ownership)",
+  "scripts": {
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
+    "test:headed": "playwright test --headed",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0"
+  }
+}

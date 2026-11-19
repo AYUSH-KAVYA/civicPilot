@@ -119,3 +119,57 @@ To run the complete stack locally (API + PostgreSQL with pgvector):
 docker compose up --build
 ```
 This automatically boots PostgreSQL with `pgvector`, applies table schemas, seeds initial master data, and starts the API at `http://localhost:8000`.
+
+---
+
+## 5. Frontend Deployment (Vercel)
+
+The frontend is a Next.js App Router application in `frontend/`. The recommended host is [Vercel](https://vercel.com).
+
+### 5.1 Connect the GitHub Repository
+
+1. Log into [Vercel](https://vercel.com) and click **Add New → Project**.
+2. Select your GitHub organisation/account and import the `civicPilot` repository.
+3. Vercel auto-detects Next.js. Set the **Root Directory** to `frontend`.
+4. Keep the default install/build commands (`npm install` / `npm run build`).
+5. Add the environment variables below before deploying; public Next.js variables are baked in at build time.
+6. Click **Deploy** and wait for the production build to complete.
+
+### 5.2 Environment Variables
+
+In your Vercel project, go to **Settings → Environment Variables** and add:
+
+| Variable | Value | Environment |
+|---|---|---|
+| `NEXT_PUBLIC_API_URL` | `https://your-civicpilot-service.onrender.com` | Production, Preview |
+| `NEXT_PUBLIC_USE_MOCKS` | `false` | Production |
+| `NEXT_PUBLIC_USE_MOCKS` | `true` | Preview *(optional — lets PR previews run without a backend)* |
+
+> **Important**: `NEXT_PUBLIC_API_URL` must point to the deployed backend URL (from Section 2 above), not `localhost`.
+> Do not put backend secrets in `NEXT_PUBLIC_*` variables. They are included in browser code. Set `FRONTEND_ORIGIN` on the backend to the exact Vercel origin so CORS allows the browser requests.
+
+### 5.3 Custom Domain
+
+1. In your Vercel project, go to **Settings → Domains**.
+2. Click **Add Domain** and enter your domain (e.g. `civicpilot.metroville.gov`).
+3. Follow the DNS instructions (add a CNAME pointing to `cname.vercel-dns.com`).
+4. Vercel provisions TLS automatically.
+5. Update the backend's `FRONTEND_ORIGIN` env var on Render to match your custom domain so CORS allows requests.
+
+### 5.4 Preview Deployments for Pull Requests
+
+Vercel automatically creates a unique preview URL for every PR opened against the `main` branch (or `feat/p4-frontend`). To make previews useful without requiring a live backend:
+
+1. In Vercel **Settings → Environment Variables**, set `NEXT_PUBLIC_USE_MOCKS=true` for the **Preview** environment if no preview API is configured.
+2. Each PR gets a URL like `https://civicpilot-git-feat-p4-frontend-yourteam.vercel.app`.
+3. Reviewers can open the preview URL and exercise all UI flows using mock data — no backend required.
+4. For PRs that need real backend integration, set `NEXT_PUBLIC_USE_MOCKS=false` and a preview `NEXT_PUBLIC_API_URL`, then ensure the backend permits that preview origin.
+
+### 5.5 Deployment Checklist
+
+- [ ] `NEXT_PUBLIC_API_URL` set to production backend URL
+- [ ] `NEXT_PUBLIC_USE_MOCKS=false` in Production environment
+- [ ] `FRONTEND_ORIGIN` on Render updated to match Vercel domain
+- [ ] Vercel build succeeds from the `frontend/` root directory
+- [ ] Custom domain DNS propagated (allow up to 48 h)
+- [ ] Health check: open the Vercel URL and log in as officer — the cases list should load live data
