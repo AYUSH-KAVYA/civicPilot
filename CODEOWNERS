@@ -1,0 +1,53 @@
+# CivicPilot Monorepo CODEOWNERS
+# Owners:
+# @p1-lead (P1): Backend foundation, database, API, tools, sandbox, clock, events, CI
+# @p2-lead (P2): LLM integration, parse_media, policy_search, intake, triage, planner, KB
+# @p3-lead (P3): Orchestrator, action agent, evaluator, adaptation, guardrails, scenarios, eval runner
+# @p4-lead (P4): Frontend, end-to-end testing, documentation
+
+# Global defaults
+* @p1-lead
+
+# P1 Ownership
+backend/app/main.py @p1-lead
+backend/app/api/ @p1-lead
+backend/app/db/ @p1-lead
+backend/app/core/ @p1-lead
+backend/app/sandbox/ @p1-lead
+backend/app/schemas.py @p1-lead
+backend/app/tools/registry.py @p1-lead
+backend/app/tools/geo.py @p1-lead
+backend/app/tools/ticketing.py @p1-lead
+backend/app/tools/notify.py @p1-lead
+backend/app/tools/scheduler.py @p1-lead
+.github/ @p1-lead
+docker-compose.yml @p1-lead
+CODEOWNERS @p1-lead
+
+# P2 Ownership
+backend/app/llm/ @p2-lead
+backend/app/tools/parse_media.py @p2-lead
+backend/app/tools/policy_search.py @p2-lead
+backend/app/agents/intake.py @p2-lead
+backend/app/agents/triage.py @p2-lead
+backend/app/agents/planner.py @p2-lead
+backend/app/kb/ @p2-lead
+backend/app/eval/datasets/ @p2-lead
+
+# P3 Ownership
+backend/app/orchestrator/ @p3-lead
+backend/app/agents/action.py @p3-lead
+backend/app/agents/evaluator.py @p3-lead
+backend/app/adaptation/ @p3-lead
+backend/app/guardrails/ @p3-lead
+backend/app/scenarios/ @p3-lead
+backend/app/eval/runner.py @p3-lead
+backend/app/eval/baseline.py @p3-lead
+backend/app/eval/metrics.py @p3-lead
+
+# P4 Ownership
+frontend/ @p4-lead
+e2e/ @p4-lead
+docs/README.md @p4-lead
+docs/DEMO.md @p4-lead
+docs/architecture/ @p4-lead
