@@ -1,0 +1,44 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: civicpilot_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: civicpilot
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d civicpilot"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: civicpilot_api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgrespassword@db:5432/civicpilot
+      JWT_SECRET: super-secret-local-dev-jwt-key-replace-in-prod
+      OFFICER_PASSWORD: adminpassword
+      MOCK_LLM: "true"
+      CONFIDENCE_THRESHOLD: "0.65"
+      SIM_TIME_SCALE: "1"
+      FRONTEND_ORIGIN: "http://localhost:3000"
+      NOMINATIM_USER_AGENT: "CivicPilot/1.0 (local-docker)"
+    command: >
+      sh -c "python -m backend.app.db.init_db && uvicorn backend.app.main:app --host 0.0.0.0 --port 8000"
+
+volumes:
+  postgres_data:
